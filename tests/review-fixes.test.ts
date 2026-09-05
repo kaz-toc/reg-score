@@ -1,7 +1,5 @@
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -16,8 +14,7 @@ import { resolveStorageDir } from '../src/shared/storage-paths.js';
 import { ConfigError } from '../src/shared/errors.js';
 import { analyzeTrend } from '../src/operations/trend.js';
 import type { TrendEntry } from '../src/schema/report.v1.js';
-
-const root = path.dirname(fileURLToPath(import.meta.url));
+import { createGitRepository } from './helpers/git-repository.js';
 
 describe('review fixes', () => {
   it('rejects storage directories that escape repository root', () => {
@@ -106,23 +103,32 @@ describe('review fixes', () => {
   });
 
   it('suppresses score comparison when no stored baseline exists', async () => {
-    const diff = await runDiffDiagnosis(path.join(root, 'fixtures', 'stable-cart'), 'HEAD~1');
-    expect(diff.comparison.compatible).toBe(false);
-    expect(diff.comparison.reason).toContain('no stored baseline manifest');
-    expect(diff.comparison.riskDelta).toBeUndefined();
+    const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
+    try {
+      const diff = await runDiffDiagnosis(repo.path, repo.baseSha);
+      expect(diff.comparison.compatible).toBe(false);
+      expect(diff.comparison.reason).toContain('no stored baseline manifest');
+      expect(diff.comparison.riskDelta).toBeUndefined();
+    } finally {
+      await repo.cleanup();
+    }
   });
 
   it('compares against stored baseline when manifest exists', async () => {
-    const repoRoot = path.join(root, '..');
-    const snapshot = await createRepositorySnapshot(repoRoot);
-    const report = await runDiagnosis(snapshot);
-    const baselinePath = await saveBaseline(snapshot, report);
+    const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
     try {
-      const diff = await runDiffDiagnosis(repoRoot, 'HEAD~1');
-      expect(diff.comparison.compatible).toBe(true);
-      expect(diff.comparison.baselineId).toBeDefined();
+      const snapshot = await createRepositorySnapshot(repo.path);
+      const report = await runDiagnosis(snapshot);
+      const baselinePath = await saveBaseline(snapshot, report);
+      try {
+        const diff = await runDiffDiagnosis(repo.path, repo.baseSha);
+        expect(diff.comparison.compatible).toBe(true);
+        expect(diff.comparison.baselineId).toBeDefined();
+      } finally {
+        await rm(baselinePath, { force: true });
+      }
     } finally {
-      await rm(baselinePath, { force: true });
+      await repo.cleanup();
     }
   });
 
