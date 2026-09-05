@@ -42,6 +42,8 @@ export async function runDiagnosis(
         : snapshot.config.llm.enabled
           ? snapshot.config.llm.provider
           : 'none',
+    semanticProviderImplementationVersion:
+      semanticResolution.status === 'available' ? semanticResolution.provider.implementationVersion : undefined,
   });
 
   report.interventions = buildInterventions(

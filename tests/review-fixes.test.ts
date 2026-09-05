@@ -13,7 +13,7 @@ import { createRepositorySnapshot } from '../src/intake/snapshot.js';
 import { saveBaseline } from '../src/persistence/baseline-store.js';
 import { runDiagnosis } from '../src/pipeline/diagnose.js';
 import { IntakeError } from '../src/shared/errors.js';
-import { redactDiffReport } from '../src/shared/redaction.js';
+import { redactDiffReport, redactionPolicyFingerprint } from '../src/shared/redaction.js';
 import { ConfigError } from '../src/shared/errors.js';
 import { resolveSafeStorageDir } from '../src/persistence/storage-boundary.js';
 import { analyzeTrend } from '../src/operations/trend.js';
@@ -58,7 +58,15 @@ describe('review fixes', () => {
         repository: { regressionRiskScore: 10, confidence: 1, disclaimer: 'd' },
         axes: [],
         clusters: [],
-        evidence: [],
+        evidence: [{
+          evidenceId: 'evidence:dep-cycle:secret-repo/src/a.ts',
+          signalId: 'dep-cycle',
+          axisId: 'structural-fragility',
+          path: 'secret-repo/src/a.ts',
+          severity: 'high',
+          message: 'secret-repo cycle',
+          source: 'deterministic',
+        }],
         semanticFindings: [],
         interventions: [],
         capabilities: [],
@@ -108,7 +116,10 @@ describe('review fixes', () => {
     });
 
     const redacted = redactDiffReport(diff, ['secret-repo']);
+    const redactedAgain = redactDiffReport(redacted, ['secret-repo']);
     expect(JSON.stringify(redacted)).not.toContain('secret-repo');
+    expect(redactedAgain).toEqual(redacted);
+    expect(redacted.redactionPolicyFingerprint).toBe(redactionPolicyFingerprint(['secret-repo']));
   });
 
   it('rejects missing repository roots with intake error', async () => {

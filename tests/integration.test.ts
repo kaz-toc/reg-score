@@ -13,6 +13,7 @@ import { createRepositorySnapshot } from '../src/intake/snapshot.js';
 import { loadBaseline, saveBaseline } from '../src/persistence/baseline-store.js';
 import { appendTrend, loadTrendHistory } from '../src/persistence/trend-store.js';
 import { runDiagnosis } from '../src/pipeline/diagnose.js';
+import { runDiffDiagnosis } from '../src/commands/diff.js';
 import {
   formatConsoleReport,
   formatDiffConsoleReport,
@@ -68,6 +69,7 @@ describe('integration: semantic provider injection', () => {
             status: 'available' as const,
             provider: {
               name: 'injected',
+              implementationVersion: '1.0.0',
               analyze: async () => {
                 analyzed = true;
                 return [{
@@ -157,6 +159,28 @@ describe('integration: Git-dependent capability unevaluated', () => {
     }
   });
 
+  it('does not use parent Git history when diffing a nested non-Git analysis root', async () => {
+    const repo = await createGitRepository({
+      'fixtures/stable/src/a.ts': 'export const a = 1;\n',
+      'outside.ts': 'export const outside = 1;\n',
+    });
+    try {
+      await repo.write('outside.ts', 'export const outside = 2;\n');
+      await repo.commit('change only outside nested analysis root');
+      const fixturePath = path.join(repo.path, 'fixtures', 'stable');
+
+      const diff = await runDiffDiagnosis(fixturePath, repo.baseSha);
+
+      expect(await realpath(diff.current.metadata.repositoryPath)).toBe(await realpath(fixturePath));
+      expect(diff.comparison.compatible).toBe(false);
+      expect(diff.comparison.reason).toContain('Git unavailable for analyzed root');
+      expect(diff.comparison.changedFiles).toEqual([]);
+      expect(diff.comparison.blastRadius).toEqual([]);
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
   it('retains unsupported churn evidence for audit without recommending from it', async () => {
     const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-capability-pipeline-'));
     try {
@@ -165,6 +189,7 @@ describe('integration: Git-dependent capability unevaluated', () => {
       const snapshot = await createRepositorySnapshot(repositoryPath);
       const plugin: AnalyzerPlugin = {
         id: 'unsupported-churn-test',
+        implementationVersion: '1.0.0',
         extensions: ['.ts'],
         capabilities: [{
           language: 'typescript-javascript',

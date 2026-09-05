@@ -7,7 +7,8 @@ import type { Evidence } from '../schema/report.v1.js';
 import type { LlmConfig } from '../shared/config.js';
 
 export type SemanticProvider = {
-  name: string;
+  readonly name: string;
+  readonly implementationVersion: string;
   analyze(snapshot: RepositorySnapshot, evidence: Evidence[]): Promise<SemanticFinding[]>;
 };
 
@@ -34,6 +35,7 @@ const providerOutputSchema = z.array(
 
 export class NullSemanticProvider implements SemanticProvider {
   readonly name = 'none';
+  readonly implementationVersion = '1.0.0';
 
   async analyze(): Promise<SemanticFinding[]> {
     return [];

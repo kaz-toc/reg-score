@@ -1,4 +1,4 @@
-import { lstat, mkdtemp, mkdir, readFile, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, mkdir, readFile, realpath, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -26,6 +26,7 @@ function minimalReport(inputId: string, generatedAt: string): DiagnosisReport {
       analyzers: [],
       truncated: false,
       unevaluatedAreas: [],
+      redactionPolicyFingerprint: redactionPolicyFingerprint([]),
     },
     repository: { regressionRiskScore: 0, confidence: 1, disclaimer: 'test' },
     axes: [],
@@ -81,6 +82,24 @@ describe('persistence storage boundary', () => {
 
       expect(outcome).toBeInstanceOf(ConfigError);
       expect(await readFile(policyPath, 'utf8')).toBe(policy);
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it('permits a dedicated top-level baseline storage directory', async () => {
+    const repo = await createGitRepository({
+      '.gitignore': '.reg-score/baselines/\n.reg-score/trends/\nbaselines/\n',
+      'reg-score.config.json': JSON.stringify({ schemaVersion: 1, baselineDir: 'baselines' }),
+      'src/a.ts': 'export const a = 1;\n',
+    });
+
+    try {
+      const snapshot = await createRepositorySnapshot(repo.path);
+      const result = await saveBaseline(snapshot, await runDiagnosis(snapshot));
+
+      expect(path.dirname(result.path)).toBe(path.join(await realpath(repo.path), 'baselines'));
+      expect((await lstat(result.path)).isFile()).toBe(true);
     } finally {
       await repo.cleanup();
     }

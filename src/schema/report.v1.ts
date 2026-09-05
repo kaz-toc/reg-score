@@ -118,10 +118,12 @@ export const repositoryAssessmentSchema = z
 export const capabilityResultSchema = z
   .object({
     language: sourceLanguageSchema,
+    contractVersion: z.number().int().positive(),
     completeness: z.enum(['full', 'partial']),
     supportedSignals: z.array(signalIdSchema),
     unevaluatedSignals: z.array(signalIdSchema),
     analyzerId: z.string(),
+    analyzerImplementationVersion: z.string().trim().min(1),
   })
   .strict();
 
@@ -135,6 +137,7 @@ export const reportMetadataSchema = z
     unitId: z.string().optional(),
     analyzers: z.array(z.string()),
     llmProvider: z.string().optional(),
+    semanticProviderImplementationVersion: z.string().trim().min(1).optional(),
     truncated: z.boolean(),
     unevaluatedAreas: z.array(z.string()),
     semanticProviderStatus: z.enum(['available', 'unavailable', 'not-configured', 'failed']).optional(),
@@ -156,6 +159,15 @@ export const diagnosisReportSchema = z
   })
   .strict()
   .superRefine((report, ctx) => {
+    if (
+      report.metadata.semanticProviderStatus === 'available' &&
+      (!report.metadata.llmProvider || !report.metadata.semanticProviderImplementationVersion)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'available semantic provider requires a name and implementation version',
+      });
+    }
     const evidenceIdList = report.evidence.map((item) => item.evidenceId);
     const clusterIdList = report.clusters.map((item) => item.clusterId);
     const findingIdList = report.semanticFindings.map((item) => item.findingId);
@@ -259,6 +271,7 @@ export const diffComparisonSchema = z
 export const diffReportSchema = z
   .object({
     schemaVersion: z.literal(DIFF_SCHEMA_VERSION),
+    redactionPolicyFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional(),
     current: diagnosisReportSchema,
     base: diagnosisReportSchema.optional(),
     comparison: diffComparisonSchema,
@@ -287,6 +300,75 @@ export const diffReportSchema = z
         if (diff.comparison.reason !== undefined) {
           ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'compatible diff forbids an incompatibility reason' });
         }
+
+        const severityRank = { low: 1, medium: 2, high: 3 } as const;
+        const currentEvidence = new Map(diff.current.evidence.map((item) => [item.evidenceId, item]));
+        const baseEvidence = new Map(diff.base.evidence.map((item) => [item.evidenceId, item]));
+        const expectedNew = new Set<string>();
+        const expectedWorsened = new Set<string>();
+        const expectedImproved = new Set<string>();
+        for (const [id, current] of currentEvidence) {
+          const previous = baseEvidence.get(id);
+          if (!previous) {
+            expectedNew.add(id);
+          } else if (severityRank[current.severity] > severityRank[previous.severity]) {
+            expectedWorsened.add(id);
+          } else if (severityRank[current.severity] < severityRank[previous.severity]) {
+            expectedImproved.add(id);
+          }
+        }
+        for (const id of baseEvidence.keys()) {
+          if (!currentEvidence.has(id)) {
+            expectedImproved.add(id);
+          }
+        }
+
+        const changeSets = [
+          ['newSignals', diff.comparison.newSignals, expectedNew],
+          ['worsenedSignals', diff.comparison.worsenedSignals, expectedWorsened],
+          ['improvedSignals', diff.comparison.improvedSignals, expectedImproved],
+        ] as const;
+        const allChangeIds: string[] = [];
+        for (const [label, changes, expected] of changeSets) {
+          const actual = changes.map((change) => change.evidenceId);
+          allChangeIds.push(...actual);
+          if (
+            new Set(actual).size !== actual.length ||
+            actual.length !== expected.size ||
+            actual.some((id) => !expected.has(id))
+          ) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `${label} must exactly match the evidence delta`,
+            });
+          }
+          for (const change of changes) {
+            const current = currentEvidence.get(change.evidenceId);
+            const previous = baseEvidence.get(change.evidenceId);
+            const evidence = current ?? previous;
+            const severitiesMatch =
+              label === 'newSignals'
+                ? change.previousSeverity === undefined && change.currentSeverity === current?.severity
+                : label === 'worsenedSignals'
+                  ? change.previousSeverity === previous?.severity && change.currentSeverity === current?.severity
+                  : change.previousSeverity === previous?.severity && change.currentSeverity === current?.severity;
+            if (
+              !evidence ||
+              change.signalId !== evidence.signalId ||
+              !severitiesMatch ||
+              change.path !== evidence.path ||
+              change.message !== evidence.message
+            ) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: `${label} must describe the matching report evidence`,
+              });
+            }
+          }
+        }
+        if (new Set(allChangeIds).size !== allChangeIds.length) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'compatible signal change sets must be disjoint' });
+        }
       }
     } else if (baselineFieldsPresent) {
       ctx.addIssue({
@@ -303,6 +385,14 @@ export const diffReportSchema = z
         diff.comparison.improvedSignals.length > 0
       ) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'incompatible diff forbids signal changes' });
+      }
+    }
+    if (diff.redactionPolicyFingerprint) {
+      if (diff.current.metadata.redactionPolicyFingerprint !== diff.redactionPolicyFingerprint) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'diff redaction policy must match current report metadata' });
+      }
+      if (diff.base && diff.base.metadata.redactionPolicyFingerprint !== diff.redactionPolicyFingerprint) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'diff redaction policy must match base report metadata' });
       }
     }
   });
@@ -331,6 +421,12 @@ export const baselineEntrySchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'baseline assessment contract must match report metadata',
+      });
+    }
+    if (entry.redactionPolicyFingerprint !== entry.report.metadata.redactionPolicyFingerprint) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'baseline redaction policy must match report metadata',
       });
     }
   });

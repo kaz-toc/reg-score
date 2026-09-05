@@ -274,6 +274,7 @@ export type AssessmentInput = {
   successfulAnalyzers: number;
   semanticResolution: SemanticProviderResolution;
   llmProvider?: string;
+  semanticProviderImplementationVersion?: string;
 };
 
 export function assessRisk(input: AssessmentInput): DiagnosisReport {
@@ -355,6 +356,7 @@ export function assessRisk(input: AssessmentInput): DiagnosisReport {
       unitId: input.snapshot.unitId,
       analyzers: input.analyzers,
       llmProvider: input.llmProvider,
+      semanticProviderImplementationVersion: input.semanticProviderImplementationVersion,
       truncated: input.snapshot.truncated,
       unevaluatedAreas: [...new Set(unevaluatedAreas)].sort(),
       semanticProviderStatus,

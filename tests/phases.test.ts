@@ -71,6 +71,7 @@ describe('phase 4-6 capabilities', () => {
   it('returns findings from the actual provider supplied by an injected semantic factory', async () => {
     const provider = {
       name: 'injected',
+      implementationVersion: '1.0.0',
       analyze: async () => [
         {
           axisId: 'semantic-ambiguity' as const,

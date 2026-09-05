@@ -4,9 +4,17 @@
 
 ```ts
 type AnalyzerPlugin = {
-  id: string;
+  readonly id: string;
+  readonly implementationVersion: string;
   capabilities: AnalyzerCapability[];
   extract(snapshot: RepositorySnapshot): Promise<Evidence[]>;
+};
+
+type AnalyzerCapability = {
+  readonly language: SourceLanguage;
+  readonly contractVersion: number;
+  signals: SignalId[];
+  completeness: 'full' | 'partial';
 };
 ```
 
@@ -18,4 +26,7 @@ type AnalyzerPlugin = {
 
 ## Versioning
 
-プラグイン contract は `analyzer-contract` バージョンで管理する。破壊的変更時は major を上げ、Assessment Contract と独立に進化できる。
+- `AnalyzerCapability.contractVersion` は Evidence の意味・判定契約を表す。契約変更時は必ず更新する。
+- `AnalyzerPlugin.implementationVersion` は同じ ID の解析実装リリースを識別する不変値であり、解析結果を変え得る実装変更時は必ず更新する。
+- 両方の値はベースライン互換性 fingerprint に含まれる。関数ソース文字列からバージョンを推測しない。
+- プラグイン contract は Assessment Contract と独立に進化できる。

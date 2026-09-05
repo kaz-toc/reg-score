@@ -4,14 +4,15 @@ import type { RepositorySnapshot, SourceFile } from '../intake/snapshot.js';
 import { IntakeError } from '../shared/errors.js';
 
 export type AnalyzerCapability = {
-  language: SourceLanguage;
-  contractVersion: number;
+  readonly language: SourceLanguage;
+  readonly contractVersion: number;
   signals: readonly SignalId[];
   completeness: 'full' | 'partial';
 };
 
 export type AnalyzerPlugin = {
-  id: string;
+  readonly id: string;
+  readonly implementationVersion: string;
   extensions: readonly string[];
   capabilities: readonly AnalyzerCapability[];
   extract(snapshot: RepositorySnapshot): Promise<Evidence[]>;
@@ -94,10 +95,12 @@ export function negotiateCapabilities(
     if (!plugin) {
       capabilities.push({
         language,
+        contractVersion: ASSESSMENT_CONTRACT_VERSION,
         completeness: 'partial',
         supportedSignals: [],
         unevaluatedSignals: [...ALL_SIGNAL_IDS],
         analyzerId: 'none',
+        analyzerImplementationVersion: 'unavailable',
       });
       continue;
     }
@@ -111,10 +114,12 @@ export function negotiateCapabilities(
     const unevaluatedSignals = ALL_SIGNAL_IDS.filter((signal) => !supportedSignals.includes(signal));
     capabilities.push({
       language,
+      contractVersion: capability.contractVersion,
       completeness: capability.completeness,
       supportedSignals,
       unevaluatedSignals,
       analyzerId: plugin.id,
+      analyzerImplementationVersion: plugin.implementationVersion,
     });
   }
 
@@ -125,6 +130,7 @@ export function negotiateCapabilities(
 
 export class TypeScriptAnalyzerPlugin implements AnalyzerPlugin {
   readonly id = 'typescript-javascript-v1';
+  readonly implementationVersion = '1.0.0';
   readonly extensions = LANGUAGE_EXTENSIONS['typescript-javascript'];
   readonly capabilities: AnalyzerCapability[] = [
     {
@@ -146,6 +152,7 @@ export class TypeScriptAnalyzerPlugin implements AnalyzerPlugin {
 
 export class PythonStubAnalyzerPlugin implements AnalyzerPlugin {
   readonly id = 'python-stub-v1';
+  readonly implementationVersion = '1.0.0';
   readonly extensions = LANGUAGE_EXTENSIONS.python;
   readonly capabilities: AnalyzerCapability[] = [
     {
@@ -163,6 +170,7 @@ export class PythonStubAnalyzerPlugin implements AnalyzerPlugin {
 
 export class GoStubAnalyzerPlugin implements AnalyzerPlugin {
   readonly id = 'go-stub-v1';
+  readonly implementationVersion = '1.0.0';
   readonly extensions = LANGUAGE_EXTENSIONS.go;
   readonly capabilities: AnalyzerCapability[] = [
     {

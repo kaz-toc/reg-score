@@ -8,8 +8,10 @@ import { describe, expect, it } from 'vitest';
 import { compareDiagnosis, compareSignalChanges } from '../src/comparison/compare.js';
 import { runDiffDiagnosis } from '../src/commands/diff.js';
 import { createRepositorySnapshot } from '../src/intake/snapshot.js';
-import { saveBaseline } from '../src/persistence/baseline-store.js';
+import { diagnosisContextFingerprint } from '../src/intake/analysis-context.js';
+import { loadBaseline, saveBaseline } from '../src/persistence/baseline-store.js';
 import { runDiagnosis } from '../src/pipeline/diagnose.js';
+import type { AnalyzerPlugin } from '../src/plugins/analyzer.js';
 import { baselineEntrySchema } from '../src/schema/report.v1.js';
 import type { BaselineEntry, DiagnosisReport } from '../src/schema/report.v1.js';
 import { ConfigError } from '../src/shared/errors.js';
@@ -18,6 +20,49 @@ import { redactReport } from '../src/shared/redaction.js';
 import { createGitRepository } from './helpers/git-repository.js';
 
 const execFileAsync = promisify(execFile);
+
+function versionedAnalyzer(
+  implementationVersion: string,
+  contractVersion: number,
+  emitHighRiskEvidence: boolean,
+): AnalyzerPlugin {
+  return {
+    id: 'same-analyzer',
+    implementationVersion,
+    extensions: ['.ts'],
+    capabilities: [{
+      language: 'typescript-javascript',
+      contractVersion,
+      signals: ['large-file'],
+      completeness: 'partial',
+    }],
+    extract: async () => emitHighRiskEvidence ? [{
+      evidenceId: 'evidence:large-file:src/a.ts',
+      signalId: 'large-file',
+      axisId: 'structural-fragility',
+      path: 'src/a.ts',
+      severity: 'high',
+      message: 'versioned analyzer high-risk result',
+      source: 'deterministic',
+    }] : [],
+  };
+}
+
+async function compareAgainstSavedBaseline(
+  snapshot: Awaited<ReturnType<typeof createRepositorySnapshot>>,
+  current: DiagnosisReport,
+  sourceCommitSha: string,
+) {
+  const stored = await loadBaseline(snapshot, sourceCommitSha);
+  return compareDiagnosis(current, stored.entry, {
+    resolvedBaseSha: sourceCommitSha,
+    redactPaths: [],
+    redactionPolicyFingerprint: redactionPolicyFingerprint([]),
+    analysisContextFingerprint: diagnosisContextFingerprint(snapshot.analysisContextFingerprint, current),
+    changedFiles: [],
+    blastRadius: [],
+  });
+}
 
 async function checkout(repositoryPath: string, ref: string): Promise<void> {
   await execFileAsync('git', ['checkout', '--detach', ref], { cwd: repositoryPath });
@@ -254,34 +299,50 @@ describe('commit-bound baseline comparison', () => {
     }
   });
 
-  it('rejects a baseline created by a different analyzer implementation', async () => {
+  it('rejects the same analyzer identity when its immutable implementation version changes', async () => {
     const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
     try {
       const snapshot = await createRepositorySnapshot(repo.path);
-      await saveBaseline(snapshot, await runDiagnosis(snapshot, {
-        analyzerPlugins: [{
-          id: 'custom-typescript-v2',
-          extensions: ['.ts'],
-          capabilities: [{
-            language: 'typescript-javascript',
-            contractVersion: 2,
-            signals: ['large-file'],
-            completeness: 'partial',
-          }],
-          extract: async () => [],
-        }],
-      }));
+      const baselineReport = await runDiagnosis(snapshot, {
+        analyzerPlugins: [versionedAnalyzer('1.0.0', 2, false)],
+      });
+      await saveBaseline(snapshot, baselineReport);
+      const currentReport = await runDiagnosis(snapshot, {
+        analyzerPlugins: [versionedAnalyzer('2.0.0', 2, true)],
+      });
 
-      const diff = await runDiffDiagnosis(repo.path, repo.headSha);
+      const comparison = await compareAgainstSavedBaseline(snapshot, currentReport, repo.headSha);
 
-      expect(diff.comparison.compatible).toBe(false);
-      expect(diff.comparison.reason).toContain('analysis context mismatch');
+      expect(baselineReport.repository.regressionRiskScore).toBe(0);
+      expect(currentReport.repository.regressionRiskScore).toBe(75);
+      expect(comparison.comparison.compatible).toBe(false);
+      expect(comparison.comparison.reason).toContain('analysis context mismatch');
     } finally {
       await repo.cleanup();
     }
   });
 
-  it('rejects a baseline created by a different semantic provider implementation', async () => {
+  it('rejects the same analyzer implementation when its capability contract version changes', async () => {
+    const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
+    try {
+      const snapshot = await createRepositorySnapshot(repo.path);
+      await saveBaseline(snapshot, await runDiagnosis(snapshot, {
+        analyzerPlugins: [versionedAnalyzer('1.0.0', 2, false)],
+      }));
+      const currentReport = await runDiagnosis(snapshot, {
+        analyzerPlugins: [versionedAnalyzer('1.0.0', 3, false)],
+      });
+
+      const comparison = await compareAgainstSavedBaseline(snapshot, currentReport, repo.headSha);
+
+      expect(comparison.comparison.compatible).toBe(false);
+      expect(comparison.comparison.reason).toContain('analysis context mismatch');
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it('rejects the same semantic provider name when its implementation version changes', async () => {
     const repo = await createGitRepository({
       'reg-score.config.json': JSON.stringify({
         schemaVersion: 1,
@@ -291,29 +352,46 @@ describe('commit-bound baseline comparison', () => {
     });
     try {
       const snapshot = await createRepositorySnapshot(repo.path);
-      await saveBaseline(snapshot, await runDiagnosis(snapshot, {
+      const baselineReport = await runDiagnosis(snapshot, {
+        analyzerPlugins: [versionedAnalyzer('1.0.0', 2, false)],
         semanticProviderFactory: {
           create: () => ({
             status: 'available' as const,
             provider: {
-              name: 'injected-provider',
+              name: 'same-provider',
+              implementationVersion: '1.0.0',
+              analyze: async () => [],
+            },
+          }),
+        },
+      });
+      await saveBaseline(snapshot, baselineReport);
+      const currentReport = await runDiagnosis(snapshot, {
+        analyzerPlugins: [versionedAnalyzer('1.0.0', 2, false)],
+        semanticProviderFactory: {
+          create: () => ({
+            status: 'available' as const,
+            provider: {
+              name: 'same-provider',
+              implementationVersion: '2.0.0',
               analyze: async () => [{
-                findingId: 'finding:semantic:injected',
+                findingId: 'finding:semantic:versioned',
                 axisId: 'semantic-ambiguity' as const,
                 path: 'src/a.ts',
-                summary: 'injected semantic result',
+                summary: 'versioned semantic result',
                 relatedEvidenceIds: [],
-                confidence: 0.8,
+                confidence: 1,
               }],
             },
           }),
         },
-      }));
+      });
 
-      const diff = await runDiffDiagnosis(repo.path, repo.headSha);
+      const comparison = await compareAgainstSavedBaseline(snapshot, currentReport, repo.headSha);
 
-      expect(diff.comparison.compatible).toBe(false);
-      expect(diff.comparison.reason).toContain('analysis context mismatch');
+      expect(currentReport.repository.regressionRiskScore).not.toBe(baselineReport.repository.regressionRiskScore);
+      expect(comparison.comparison.compatible).toBe(false);
+      expect(comparison.comparison.reason).toContain('analysis context mismatch');
     } finally {
       await repo.cleanup();
     }
@@ -391,7 +469,8 @@ describe('commit-bound baseline comparison', () => {
     });
     try {
       const snapshot = await createRepositorySnapshot(repo.path);
-      await saveBaseline(snapshot, await runDiagnosis(snapshot));
+      const raw = await runDiagnosis(snapshot);
+      await saveBaseline(snapshot, raw);
 
       const redacted = await runDiffDiagnosis(repo.path, repo.headSha);
 
@@ -399,7 +478,8 @@ describe('commit-bound baseline comparison', () => {
       expect(redacted.comparison.newSignals).toEqual([]);
       expect(redacted.comparison.worsenedSignals).toEqual([]);
       expect(redacted.comparison.improvedSignals).toEqual([]);
-      expect(JSON.stringify(redacted.current)).toContain('secret-repo');
+      expect(JSON.stringify(raw)).toContain('secret-repo');
+      expect(JSON.stringify(redacted.current)).not.toContain('secret-repo');
     } finally {
       await repo.cleanup();
     }

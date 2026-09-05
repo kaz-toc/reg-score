@@ -8,9 +8,9 @@ import { diagnosisContextFingerprint } from '../intake/analysis-context.js';
 import { loadPolicy } from '../operations/policy.js';
 import { loadBaseline } from '../persistence/baseline-store.js';
 import { runDiagnosis } from '../pipeline/diagnose.js';
-import { DIFF_SCHEMA_VERSION, diffReportSchema } from '../schema/report.v1.js';
+import { DIFF_SCHEMA_VERSION } from '../schema/report.v1.js';
 import type { BlastRadiusEntry, DiffReport } from '../schema/report.v1.js';
-import { redactionPolicyFingerprint } from '../shared/redaction.js';
+import { redactDiffReport, redactionPolicyFingerprint } from '../shared/redaction.js';
 
 function transitiveReach(start: string, edges: Array<{ from: string; to: string }>, direction: 'dependents' | 'dependencies'): {
   nodes: Set<string>;
@@ -85,10 +85,29 @@ export async function runDiffDiagnosis(repositoryPath: string, baseRef: string):
   const currentSnapshot = await createRepositorySnapshot(resolved);
   const current = await runDiagnosis(currentSnapshot);
   const policy = await loadPolicy(currentSnapshot.repositoryPath, currentSnapshot.config.policyFile);
+  if (!currentSnapshot.gitAvailable || !currentSnapshot.sourceCommitSha) {
+    return redactDiffReport(
+      {
+        schemaVersion: DIFF_SCHEMA_VERSION,
+        current,
+        comparison: {
+          compatible: false,
+          reason: 'Git unavailable for analyzed root — baseline comparison suppressed',
+          changedFiles: [],
+          blastRadius: [],
+          newSignals: [],
+          worsenedSignals: [],
+          improvedSignals: [],
+        },
+      },
+      policy.redactPaths,
+    );
+  }
+
   const git = new DefaultGitProvider();
-  const resolvedBaseSha = await git.resolveRef(resolved, baseRef);
-  const changedFiles = await git.listChangedFiles(resolved, resolvedBaseSha);
-  const blastRadius = computeBlastRadius(changedFiles, resolved, currentSnapshot.files);
+  const resolvedBaseSha = await git.resolveRef(currentSnapshot.repositoryPath, baseRef);
+  const changedFiles = await git.listChangedFiles(currentSnapshot.repositoryPath, resolvedBaseSha);
+  const blastRadius = computeBlastRadius(changedFiles, currentSnapshot.repositoryPath, currentSnapshot.files);
   const storedBaseline = await loadBaseline(currentSnapshot, resolvedBaseSha);
   const comparison = compareDiagnosis(current, storedBaseline.entry, {
     resolvedBaseSha,
@@ -106,5 +125,5 @@ export async function runDiffDiagnosis(repositoryPath: string, baseRef: string):
     ...comparison,
   };
 
-  return diffReportSchema.parse(diffReport);
+  return redactDiffReport(diffReport, policy.redactPaths);
 }

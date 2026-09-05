@@ -12,6 +12,20 @@ export type SafeStorageDirectory = Readonly<{
   inode: number;
 }>;
 
+const SHARED_OR_CONTROL_DIRECTORIES = new Set([
+  '.git',
+  '.github',
+  '.reg-score',
+  'build',
+  'coverage',
+  'dist',
+  'docs',
+  'node_modules',
+  'src',
+  'test',
+  'tests',
+]);
+
 function isWithinRepository(repositoryRealPath: string, storageRealPath: string): boolean {
   const relative = path.relative(repositoryRealPath, storageRealPath);
   return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
@@ -34,8 +48,11 @@ export async function resolveSafeStorageDir(
     throw new ConfigError(configuredDir, `${label} escapes repository root`);
   }
   const storageSegments = lexicalRelative.split(path.sep).filter(Boolean);
-  if (storageSegments.length < 2) {
-    throw new ConfigError(configuredDir, `${label} must be a dedicated nested storage directory`);
+  if (storageSegments.length === 0) {
+    throw new ConfigError(configuredDir, `${label} must not be the repository root`);
+  }
+  if (storageSegments.length === 1 && SHARED_OR_CONTROL_DIRECTORIES.has(storageSegments[0] ?? '')) {
+    throw new ConfigError(configuredDir, `${label} must not use a shared or control directory`);
   }
 
   let component = repositoryRealPath;

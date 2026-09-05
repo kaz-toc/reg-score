@@ -66,6 +66,8 @@ export function diagnosisContextFingerprint(
       language: capability.language,
       completeness: capability.completeness,
       analyzerId: capability.analyzerId,
+      analyzerImplementationVersion: capability.analyzerImplementationVersion,
+      contractVersion: capability.contractVersion,
       supportedSignals: [...new Set(capability.supportedSignals)].sort(),
       unevaluatedSignals: [...new Set(capability.unevaluatedSignals)].sort(),
     }))
@@ -78,6 +80,7 @@ export function diagnosisContextFingerprint(
     capabilities,
     semanticProviderStatus: report.metadata.semanticProviderStatus ?? null,
     semanticProvider: report.metadata.llmProvider ?? null,
+    semanticProviderImplementationVersion: report.metadata.semanticProviderImplementationVersion ?? null,
   };
   return createHash('sha256').update(JSON.stringify(context)).digest('hex');
 }

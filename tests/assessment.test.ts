@@ -199,10 +199,12 @@ describe('assessment contract', () => {
       capabilities: [
         {
           language: 'typescript-javascript',
+          contractVersion: 2,
           completeness: 'partial',
           supportedSignals: ['large-file'],
           unevaluatedSignals: ['dep-cycle'],
           analyzerId: 'typescript-javascript-v1',
+          analyzerImplementationVersion: '1.0.0',
         },
       ],
       analyzers: ['typescript-javascript-v1'],
@@ -238,10 +240,12 @@ describe('assessment contract', () => {
       capabilities: [
         {
           language: 'typescript-javascript',
+          contractVersion: 2,
           completeness: 'partial',
           supportedSignals: ['large-file'],
           unevaluatedSignals: ['semantic-ambiguity'],
           analyzerId: 'typescript-javascript-v1',
+          analyzerImplementationVersion: '1.0.0',
         },
       ],
       analyzers: ['typescript-javascript-v1'],
@@ -288,10 +292,12 @@ describe('assessment contract', () => {
       capabilities: [
         {
           language: 'typescript-javascript',
+          contractVersion: 2,
           completeness: 'full',
           supportedSignals: ['dep-cycle', 'large-file'],
           unevaluatedSignals: [],
           analyzerId: 'typescript-javascript-v1',
+          analyzerImplementationVersion: '1.0.0',
         },
       ],
       analyzers: ['typescript-javascript-v1'],

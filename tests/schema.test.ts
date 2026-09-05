@@ -98,6 +98,54 @@ describe('schema reference integrity', () => {
     }).success).toBe(false);
   });
 
+  it('requires compatible signal changes to be disjoint and exactly match report evidence', () => {
+    const baseEvidence = {
+      evidenceId: 'evidence:large-file:src/a.ts',
+      signalId: 'large-file' as const,
+      axisId: 'structural-fragility' as const,
+      path: 'src/a.ts',
+      severity: 'low' as const,
+      message: 'base severity',
+      source: 'deterministic' as const,
+    };
+    const currentEvidence = { ...baseEvidence, severity: 'high' as const, message: 'current severity' };
+    const base = { ...minimalReport('base'), evidence: [baseEvidence] };
+    const current = { ...minimalReport('current'), evidence: [currentEvidence] };
+    const worsened = {
+      evidenceId: currentEvidence.evidenceId,
+      signalId: currentEvidence.signalId,
+      path: currentEvidence.path,
+      previousSeverity: baseEvidence.severity,
+      currentSeverity: currentEvidence.severity,
+      message: currentEvidence.message,
+    };
+    const value = {
+      schemaVersion: 2,
+      current,
+      base,
+      comparison: {
+        ...comparison(true),
+        baselineId: base.metadata.inputId,
+        riskDelta: 0,
+        worsenedSignals: [worsened],
+      },
+    };
+
+    expect(diffReportSchema.safeParse(value).success).toBe(true);
+    expect(diffReportSchema.safeParse({
+      ...value,
+      comparison: { ...value.comparison, newSignals: [worsened] },
+    }).success).toBe(false);
+    expect(diffReportSchema.safeParse({
+      ...value,
+      comparison: {
+        ...value.comparison,
+        worsenedSignals: [],
+        newSignals: [{ ...worsened, evidenceId: 'evidence:large-file:src/phantom.ts' }],
+      },
+    }).success).toBe(false);
+  });
+
   it('requires an incompatibility reason and empty signal changes', () => {
     const value = {
       schemaVersion: 2,
@@ -126,7 +174,14 @@ describe('schema reference integrity', () => {
   });
 
   it('enforces baseline metadata and report consistency', () => {
-    const report = minimalReport();
+    const fingerprint = redactionPolicyFingerprint([]);
+    const report = {
+      ...minimalReport(),
+      metadata: {
+        ...minimalReport().metadata,
+        redactionPolicyFingerprint: fingerprint,
+      },
+    } as DiagnosisReport;
     const entry = {
       schemaVersion: 3,
       kind: 'reg-score/baseline',
@@ -134,7 +189,7 @@ describe('schema reference integrity', () => {
       generatedAt: report.metadata.generatedAt,
       assessmentContractVersion: report.metadata.assessmentContractVersion,
       sourceCommitSha: 'a'.repeat(40),
-      redactionPolicyFingerprint: redactionPolicyFingerprint([]),
+      redactionPolicyFingerprint: fingerprint,
       analysisContextFingerprint: 'b'.repeat(64),
       report,
     };
@@ -142,6 +197,7 @@ describe('schema reference integrity', () => {
     expect(baselineEntrySchema.safeParse(entry).success).toBe(true);
     expect(baselineEntrySchema.safeParse({ ...entry, inputId: 'other' }).success).toBe(false);
     expect(baselineEntrySchema.safeParse({ ...entry, generatedAt: '2026-01-02T00:00:00.000Z' }).success).toBe(false);
+    expect(baselineEntrySchema.safeParse({ ...entry, redactionPolicyFingerprint: 'c'.repeat(64) }).success).toBe(false);
   });
 
   it('rejects duplicate entity IDs within the same report collection', () => {

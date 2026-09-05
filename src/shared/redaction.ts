@@ -104,10 +104,6 @@ export function redactReport(report: DiagnosisReport, redactPaths: string[]): Di
     }
     return diagnosisReportSchema.parse(report);
   }
-  if (normalized.length === 0) {
-    return report;
-  }
-
   const redacted = {
     ...report,
     metadata: {
@@ -151,12 +147,17 @@ export function redactReport(report: DiagnosisReport, redactPaths: string[]): Di
 
 export function redactDiffReport(diff: DiffReport, redactPaths: string[]): DiffReport {
   const normalized = normalizeRedactionPaths(redactPaths);
-  if (normalized.length === 0) {
-    return diff;
+  const fingerprint = redactionPolicyFingerprint(normalized);
+  if (diff.redactionPolicyFingerprint) {
+    if (diff.redactionPolicyFingerprint !== fingerprint) {
+      throw new RegScoreError('cannot apply a different redaction policy to an already-redacted diff report');
+    }
+    return diffReportSchema.parse(diff);
   }
 
   const redacted = {
     ...diff,
+    redactionPolicyFingerprint: fingerprint,
     current: redactReport(diff.current, normalized),
     base: diff.base ? redactReport(diff.base, normalized) : undefined,
     comparison: {
