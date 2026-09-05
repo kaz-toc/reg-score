@@ -1,5 +1,7 @@
+import { execFile } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
+import { promisify } from 'node:util';
 
 import { describe, expect, it } from 'vitest';
 
@@ -15,6 +17,8 @@ import { ConfigError } from '../src/shared/errors.js';
 import { analyzeTrend } from '../src/operations/trend.js';
 import type { TrendEntry } from '../src/schema/report.v1.js';
 import { createGitRepository } from './helpers/git-repository.js';
+
+const execFileAsync = promisify(execFile);
 
 describe('review fixes', () => {
   it('rejects storage directories that escape repository root', () => {
@@ -141,5 +145,16 @@ describe('review fixes', () => {
       { schemaVersion: 1, generatedAt: '2026-01-05T00:00:00.000Z', inputId: 'e', score: 24, confidence: 1, contractVersion: 2, topClusters: [] },
     ];
     expect(analyzeTrend(entries).degradationStartAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('creates two commits without seed files', async () => {
+    const repo = await createGitRepository();
+    try {
+      const { stdout } = await execFileAsync('git', ['rev-list', '--count', 'HEAD'], { cwd: repo.path });
+      expect(stdout.trim()).toBe('2');
+      expect(repo.baseSha).not.toBe(repo.headSha);
+    } finally {
+      await repo.cleanup();
+    }
   });
 });

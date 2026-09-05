@@ -31,7 +31,7 @@ export async function createGitRepository(files: Record<string, string> = {}): P
     await writeFile(absolutePath, content);
   }
   await git(repositoryPath, ['add', '.']);
-  await git(repositoryPath, ['commit', '-m', 'base']);
+  await git(repositoryPath, ['commit', '--allow-empty', '-m', 'base']);
   const baseSha = await git(repositoryPath, ['rev-parse', 'HEAD']);
   await writeFile(path.join(repositoryPath, 'test-head.txt'), 'head\n');
   await git(repositoryPath, ['add', '.']);
