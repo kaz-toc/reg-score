@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { lstat, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { DiagnosisReport, Intervention, TrendEntry } from '../schema/report.v1.js';
@@ -48,9 +48,16 @@ export function rankInvestmentPriorities(report: DiagnosisReport): InvestmentPri
 export async function loadTrendHistory(trendPath: string): Promise<TrendEntry[]> {
   let raw: string;
   try {
+    const historyStat = await lstat(trendPath);
+    if (historyStat.isSymbolicLink()) {
+      throw new RegScoreError(`refusing to read trend history through symbolic link: ${trendPath}`);
+    }
     raw = await readFile(trendPath, 'utf8');
-  } catch {
-    return [];
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
+      return [];
+    }
+    throw error;
   }
 
   const entries: TrendEntry[] = [];

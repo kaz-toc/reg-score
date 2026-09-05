@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { lstat, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { DiagnosisReport } from '../schema/report.v1.js';
@@ -13,7 +13,9 @@ import { atomicAppendLine, atomicWriteFile } from '../shared/atomic-write.js';
 import { redactReport, redactStringList } from '../shared/redaction.js';
 import { loadPolicy } from '../operations/policy.js';
 import { trendEntrySchema } from '../schema/report.v1.js';
-import { assertRetentionTarget, resolveStorageDir } from '../shared/storage-paths.js';
+import type { PersistenceResult, RetentionAudit } from '../persistence/retention.js';
+import { retainBaselineEntries, retainTrendEntries } from '../persistence/retention.js';
+import { resolveSafeStorageDir } from '../persistence/storage-boundary.js';
 
 export async function runDiagnosis(snapshot: RepositorySnapshot): Promise<DiagnosisReport> {
   const plugins = getDefaultPlugins();
@@ -42,42 +44,26 @@ async function applyRetention(
   retentionDays: number,
   baselineDir: string,
   trendDir: string,
-): Promise<string[]> {
-  const removed: string[] = [];
-  const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
-  const resolvedBaselineDir = resolveStorageDir(repositoryPath, baselineDir, 'baselineDir');
-  const resolvedTrendDir = resolveStorageDir(repositoryPath, trendDir, 'trendDir');
-
-  for (const entry of await readdir(resolvedBaselineDir).catch(() => [] as string[])) {
-    if (!entry.endsWith('.json')) {
-      continue;
-    }
-    const entryPath = path.join(resolvedBaselineDir, entry);
-    assertRetentionTarget(repositoryPath, entryPath, baselineDir);
-    const entryStat = await stat(entryPath).catch(() => null);
-    if (entryStat?.isFile() && entryStat.mtimeMs < cutoff) {
-      await rm(entryPath, { force: true });
-      removed.push(entryPath);
-    }
-  }
-
-  const trendPath = path.join(resolvedTrendDir, 'history.jsonl');
-  assertRetentionTarget(repositoryPath, trendPath, trendDir);
-  const trendStat = await stat(trendPath).catch(() => null);
-  if (trendStat?.isFile() && trendStat.mtimeMs < cutoff) {
-    await rm(trendPath, { force: true });
-    removed.push(trendPath);
-  }
-
-  return removed;
+): Promise<RetentionAudit[]> {
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+  const resolvedBaselineDir = await resolveSafeStorageDir(repositoryPath, baselineDir, 'baselineDir', true);
+  const resolvedTrendDir = await resolveSafeStorageDir(repositoryPath, trendDir, 'trendDir', true);
+  return Promise.all([
+    retainBaselineEntries(resolvedBaselineDir, cutoff),
+    retainTrendEntries(path.join(resolvedTrendDir, 'history.jsonl'), cutoff),
+  ]);
 }
 
-export async function saveBaseline(snapshot: RepositorySnapshot, report: DiagnosisReport): Promise<string> {
+export async function saveBaseline(snapshot: RepositorySnapshot, report: DiagnosisReport): Promise<PersistenceResult> {
   const policy = await loadPolicy(snapshot.repositoryPath, snapshot.config.policyFile);
-  await applyRetention(snapshot.repositoryPath, policy.retentionDays, snapshot.config.baselineDir, snapshot.config.trendDir);
+  const retention = await applyRetention(
+    snapshot.repositoryPath,
+    policy.retentionDays,
+    snapshot.config.baselineDir,
+    snapshot.config.trendDir,
+  );
 
-  const baselineDir = resolveStorageDir(snapshot.repositoryPath, snapshot.config.baselineDir, 'baselineDir');
-  await mkdir(baselineDir, { recursive: true });
+  const baselineDir = await resolveSafeStorageDir(snapshot.repositoryPath, snapshot.config.baselineDir, 'baselineDir', true);
   const redacted = redactReport(report, policy.redactPaths);
   const entry = baselineEntrySchema.parse({
     schemaVersion: 1,
@@ -87,16 +73,23 @@ export async function saveBaseline(snapshot: RepositorySnapshot, report: Diagnos
     report: redacted,
   });
   const baselinePath = path.join(baselineDir, `${entry.inputId}.json`);
-  assertRetentionTarget(snapshot.repositoryPath, baselinePath, snapshot.config.baselineDir);
   await atomicWriteFile(baselinePath, JSON.stringify(entry, null, 2));
-  return baselinePath;
+  return { path: baselinePath, retention };
 }
 
 export async function loadBaseline(
   snapshot: RepositorySnapshot,
   inputId?: string,
 ): Promise<{ entry: ReturnType<typeof baselineEntrySchema.parse>; path: string } | null> {
-  const baselineDir = resolveStorageDir(snapshot.repositoryPath, snapshot.config.baselineDir, 'baselineDir');
+  let baselineDir: string;
+  try {
+    baselineDir = await resolveSafeStorageDir(snapshot.repositoryPath, snapshot.config.baselineDir, 'baselineDir', false);
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
   const entries = await readdir(baselineDir).catch(() => [] as string[]);
   const candidates = entries.filter((entry) => entry.endsWith('.json'));
 
@@ -105,6 +98,10 @@ export async function loadBaseline(
   for (const fileName of candidates) {
     const baselinePath = path.join(baselineDir, fileName);
     try {
+      const fileStat = await lstat(baselinePath);
+      if (!fileStat.isFile()) {
+        continue;
+      }
       const raw = await readFile(baselinePath, 'utf8');
       const entry = baselineEntrySchema.parse(JSON.parse(raw));
       if (inputId && entry.inputId !== inputId) {
@@ -126,12 +123,16 @@ export async function loadBaseline(
   return best;
 }
 
-export async function appendTrend(snapshot: RepositorySnapshot, report: DiagnosisReport): Promise<void> {
+export async function appendTrend(snapshot: RepositorySnapshot, report: DiagnosisReport): Promise<PersistenceResult> {
   const policy = await loadPolicy(snapshot.repositoryPath, snapshot.config.policyFile);
-  const removed = await applyRetention(snapshot.repositoryPath, policy.retentionDays, snapshot.config.baselineDir, snapshot.config.trendDir);
+  const retention = await applyRetention(
+    snapshot.repositoryPath,
+    policy.retentionDays,
+    snapshot.config.baselineDir,
+    snapshot.config.trendDir,
+  );
 
-  const trendDir = resolveStorageDir(snapshot.repositoryPath, snapshot.config.trendDir, 'trendDir');
-  await mkdir(trendDir, { recursive: true });
+  const trendDir = await resolveSafeStorageDir(snapshot.repositoryPath, snapshot.config.trendDir, 'trendDir', true);
   const trendPath = path.join(trendDir, 'history.jsonl');
   const git = new DefaultGitProvider();
   const commitSha = snapshot.gitAvailable ? await git.resolveHeadCommit(snapshot.repositoryPath) : undefined;
@@ -164,8 +165,5 @@ export async function appendTrend(snapshot: RepositorySnapshot, report: Diagnosi
   });
 
   await atomicAppendLine(trendPath, JSON.stringify(entry));
-
-  if (removed.length > 0) {
-    process.stderr.write(`retention removed ${removed.length} expired entries\n`);
-  }
+  return { path: trendPath, retention };
 }

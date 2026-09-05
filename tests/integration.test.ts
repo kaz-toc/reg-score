@@ -58,8 +58,8 @@ describe('integration: baseline atomic round-trip', () => {
     const snapshot = await createRepositorySnapshot(path.join(fixturesRoot, 'stable-cart'));
     const relocated = { ...snapshot, repositoryPath: dir, config: { ...snapshot.config, baselineDir: '.reg-score/baselines' } };
     const report = await runDiagnosis(relocated);
-    const baselinePath = await saveBaseline(relocated, report);
-    const raw = await readFile(baselinePath, 'utf8');
+    const baseline = await saveBaseline(relocated, report);
+    const raw = await readFile(baseline.path, 'utf8');
     const entry = baselineEntrySchema.parse(JSON.parse(raw));
     const loaded = await loadBaseline(relocated, entry.inputId);
     expect(loaded?.entry.inputId).toBe(entry.inputId);

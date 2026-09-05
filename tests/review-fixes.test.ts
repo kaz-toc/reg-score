@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
+import path from 'node:path';
 import { promisify } from 'node:util';
 
 import { describe, expect, it } from 'vitest';
@@ -12,8 +13,8 @@ import { createRepositorySnapshot } from '../src/intake/snapshot.js';
 import { saveBaseline, runDiagnosis } from '../src/pipeline/diagnose.js';
 import { IntakeError } from '../src/shared/errors.js';
 import { redactDiffReport } from '../src/shared/redaction.js';
-import { resolveStorageDir } from '../src/shared/storage-paths.js';
 import { ConfigError } from '../src/shared/errors.js';
+import { resolveSafeStorageDir } from '../src/persistence/storage-boundary.js';
 import { analyzeTrend } from '../src/operations/trend.js';
 import type { TrendEntry } from '../src/schema/report.v1.js';
 import { createGitRepository } from './helpers/git-repository.js';
@@ -21,8 +22,13 @@ import { createGitRepository } from './helpers/git-repository.js';
 const execFileAsync = promisify(execFile);
 
 describe('review fixes', () => {
-  it('rejects storage directories that escape repository root', () => {
-    expect(() => resolveStorageDir('/repo', '..', 'baselineDir')).toThrow(ConfigError);
+  it('rejects storage directories that escape repository root', async () => {
+    const repository = await mkdtemp(path.join(os.tmpdir(), 'reg-score-storage-root-'));
+    try {
+      await expect(resolveSafeStorageDir(repository, '..', 'baselineDir', false)).rejects.toBeInstanceOf(ConfigError);
+    } finally {
+      await rm(repository, { recursive: true, force: true });
+    }
   });
 
   it('computes blast radius paths without import edge kind field', () => {
@@ -123,13 +129,13 @@ describe('review fixes', () => {
     try {
       const snapshot = await createRepositorySnapshot(repo.path);
       const report = await runDiagnosis(snapshot);
-      const baselinePath = await saveBaseline(snapshot, report);
+      const baseline = await saveBaseline(snapshot, report);
       try {
         const diff = await runDiffDiagnosis(repo.path, repo.baseSha);
         expect(diff.comparison.compatible).toBe(true);
         expect(diff.comparison.baselineId).toBeDefined();
       } finally {
-        await rm(baselinePath, { force: true });
+        await rm(baseline.path, { force: true });
       }
     } finally {
       await repo.cleanup();
