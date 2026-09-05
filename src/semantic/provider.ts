@@ -19,6 +19,12 @@ export type SemanticProviderFactory = {
   create(config: LlmConfig): SemanticProviderResolution;
 };
 
+const REGISTERED_PROVIDERS = new Set<string>();
+
+export function registerSemanticProvider(name: string): void {
+  REGISTERED_PROVIDERS.add(name);
+}
+
 const providerOutputSchema = z.array(
   z
     .object({
@@ -48,6 +54,9 @@ export class DefaultSemanticProviderFactory implements SemanticProviderFactory {
     if (config.provider === 'none') {
       return { status: 'unavailable', reason: 'LLM provider not set' };
     }
+    if (!REGISTERED_PROVIDERS.has(config.provider)) {
+      return { status: 'unavailable', reason: `LLM provider not implemented: ${config.provider}` };
+    }
     return {
       status: 'available',
       provider: {
@@ -60,11 +69,24 @@ export class DefaultSemanticProviderFactory implements SemanticProviderFactory {
   }
 }
 
-export function selectLlmCandidateFiles(snapshot: RepositorySnapshot): RepositorySnapshot['files'] {
+export function selectLlmCandidateFiles(snapshot: RepositorySnapshot, evidence: Evidence[]): RepositorySnapshot['files'] {
   const maxFiles = snapshot.config.llm.maxFiles;
-  return [...snapshot.files]
-    .sort((a, b) => b.nonBlankLines - a.nonBlankLines)
-    .slice(0, maxFiles);
+  const sendScope = snapshot.config.llm.sendScope;
+
+  let candidates = [...snapshot.files];
+  if (sendScope === 'changed') {
+    const evidencePaths = new Set(evidence.map((item) => item.path).filter(Boolean) as string[]);
+    candidates = candidates.filter((file) => evidencePaths.has(file.relativePath));
+  } else if (sendScope === 'cluster-context') {
+    const evidencePaths = new Set(evidence.map((item) => item.path).filter(Boolean) as string[]);
+    candidates = candidates.filter(
+      (file) =>
+        evidencePaths.has(file.relativePath) ||
+        evidence.some((item) => item.path && file.relativePath.startsWith(`${item.path.split('/')[0]}/`)),
+    );
+  }
+
+  return candidates.sort((a, b) => b.nonBlankLines - a.nonBlankLines).slice(0, maxFiles);
 }
 
 export function validateSemanticFindings(
@@ -132,7 +154,7 @@ export async function runSemanticAnalysis(
   try {
     const scopedSnapshot = {
       ...snapshot,
-      files: selectLlmCandidateFiles(snapshot),
+      files: selectLlmCandidateFiles(snapshot, evidence),
     };
     const raw = await resolution.provider.analyze(scopedSnapshot, evidence);
     const findings = validateSemanticFindings(raw, snapshot, evidence);

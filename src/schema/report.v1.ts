@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const ASSESSMENT_CONTRACT_VERSION = 1;
+export const ASSESSMENT_CONTRACT_VERSION = 2;
 export const REPORT_SCHEMA_VERSION = 1;
 export const DIFF_SCHEMA_VERSION = 1;
 
@@ -231,6 +231,7 @@ export const diffComparisonSchema = z
     compatible: z.boolean(),
     reason: z.string().optional(),
     riskDelta: z.number().optional(),
+    baselineId: z.string().optional(),
     changedFiles: z.array(z.string()),
     blastRadius: z.array(blastRadiusEntrySchema),
     newSignals: z.array(evidenceChangeSchema),

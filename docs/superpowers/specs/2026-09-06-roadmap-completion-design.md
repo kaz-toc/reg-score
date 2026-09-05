@@ -26,6 +26,14 @@
 - 自動リファクタリング
 - 校正データの捏造または外部データ収集
 
+## 評価契約バージョン
+
+未リリースのため、ROADMAP 完了再構成（2026-09-06）でスコア集約・confidence 計算・mechanism-based clustering を導入した時点で `ASSESSMENT_CONTRACT_VERSION` を **v1 から v2 へ再定義**した。公開前のため v1 との後方互換は提供しない。古い baseline / trend は schema または contract mismatch として扱う。
+
+## 変更境界に関する例外
+
+AGENTS.md / CONTRIBUTING.md の「1 PR 1 主要境界」に対し、Phase 0–6 の初回契約確立は schema → intake → assessment → reporting → persistence → policy が同一公開型に依存するため、**未リリース期間に限り単一 PR で横断変更を許容**する。以降の変更は境界ごとに分割する。
+
 ## アーキテクチャ
 
 ```text

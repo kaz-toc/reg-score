@@ -19,7 +19,7 @@ describe('schema reference integrity', () => {
     const result = diagnosisReportSchema.safeParse({
       metadata: {
         schemaVersion: 1,
-        assessmentContractVersion: 1,
+        assessmentContractVersion: 2,
         generatedAt: '2026-01-01T00:00:00.000Z',
         inputId: 'x',
         repositoryPath: '/tmp',

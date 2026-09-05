@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -100,7 +100,7 @@ function transitiveReach(start: string, edges: Array<{ from: string; to: string 
 
     for (const edge of nextEdges) {
       const next = direction === 'dependents' ? edge.from : edge.to;
-      pathEdges.push(edge);
+      pathEdges.push({ from: edge.from, to: edge.to });
       if (!visited.has(next)) {
         visited.add(next);
         nodes.add(next);
@@ -126,7 +126,9 @@ export function computeBlastRadius(
     intakeIssues: [],
     config: {} as never,
   };
-  const edges = buildImportGraph(snapshot as never).filter((edge) => edge.kind === 'relative');
+  const edges = buildImportGraph(snapshot as never)
+    .filter((edge) => edge.kind === 'relative')
+    .map((edge) => ({ from: edge.from, to: edge.to }));
   const normalizedChanged = [...new Set(changedFiles.map((file) => file.replace(/\\/g, '/')))].sort();
 
   return normalizedChanged.map((changedFile) => {
@@ -143,10 +145,6 @@ export function computeBlastRadius(
       paths: [...up.paths, ...down.paths].sort((a, b) => `${a.from}->${a.to}`.localeCompare(`${b.from}->${b.to}`)),
     };
   });
-}
-
-async function listChangedFiles(repositoryPath: string, baseRef: string): Promise<string[]> {
-  return new DefaultGitProvider().listChangedFiles(repositoryPath, baseRef);
 }
 
 async function checkoutRef(repositoryPath: string, ref: string, worktreePath: string): Promise<void> {
@@ -173,15 +171,16 @@ export async function runDiffDiagnosis(repositoryPath: string, baseRef: string):
   const resolved = path.resolve(repositoryPath);
   const currentSnapshot = await createRepositorySnapshot(resolved);
   const current = await runDiagnosis(currentSnapshot);
-  const changedFiles = await listChangedFiles(resolved, baseRef);
+  const git = new DefaultGitProvider();
+  const changedFiles = await git.listChangedFiles(resolved, baseRef);
   const blastRadius = computeBlastRadius(changedFiles, resolved, currentSnapshot.files);
 
   const worktreePath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-diff-'));
-  let base: DiagnosisReport;
+  let gitBase: DiagnosisReport;
   try {
     await checkoutRef(resolved, baseRef, worktreePath);
     const baseSnapshot = await createRepositorySnapshot(worktreePath);
-    base = await runDiagnosis(baseSnapshot);
+    gitBase = await runDiagnosis(baseSnapshot);
   } finally {
     try {
       await execFileAsync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: resolved });
@@ -191,31 +190,38 @@ export async function runDiffDiagnosis(repositoryPath: string, baseRef: string):
   }
 
   const storedBaseline = await loadBaseline(currentSnapshot);
-  const compatibility = storedBaseline
-    ? assessContractCompatibility(storedBaseline.entry.report, current)
-    : assessContractCompatibility(base, current);
-
-  const signalChanges = compatibility.compatible ? compareSignalChanges(current, base) : {
+  let compatible = false;
+  let reason: string | undefined;
+  let riskDelta: number | undefined;
+  let baselineId: string | undefined;
+  let signalChanges: Pick<DiffReport['comparison'], 'newSignals' | 'worsenedSignals' | 'improvedSignals'> = {
     newSignals: [],
     worsenedSignals: [],
     improvedSignals: [],
   };
 
-  if (compatibility.compatible) {
-    current.repository.riskDelta = current.repository.regressionRiskScore - base.repository.regressionRiskScore;
-    current.repository.baselineId = base.metadata.inputId;
+  if (!storedBaseline) {
+    reason = 'no stored baseline manifest — score and signal comparison suppressed';
+  } else {
+    const compatibility = assessContractCompatibility(storedBaseline.entry.report, current);
+    compatible = compatibility.compatible;
+    reason = compatibility.reason;
+    if (compatible) {
+      baselineId = storedBaseline.entry.inputId;
+      signalChanges = compareSignalChanges(current, storedBaseline.entry.report);
+      riskDelta = current.repository.regressionRiskScore - storedBaseline.entry.report.repository.regressionRiskScore;
+    }
   }
 
   const diffReport: DiffReport = {
     schemaVersion: 1,
     current,
-    base,
+    base: gitBase,
     comparison: {
-      compatible: compatibility.compatible,
-      reason: compatibility.reason,
-      riskDelta: compatibility.compatible
-        ? current.repository.regressionRiskScore - base.repository.regressionRiskScore
-        : undefined,
+      compatible,
+      reason,
+      riskDelta,
+      baselineId,
       changedFiles,
       blastRadius,
       ...signalChanges,
@@ -223,70 +229,4 @@ export async function runDiffDiagnosis(repositoryPath: string, baseRef: string):
   };
 
   return diffReportSchema.parse(diffReport);
-}
-
-export async function writeGitHubSummary(diff: DiffReport, outputPath: string): Promise<void> {
-  const lines = [
-    '# reg-score PR Advisory',
-    '',
-    `Score: ${diff.current.repository.regressionRiskScore}`,
-    diff.comparison.compatible
-      ? `Delta vs base: ${diff.comparison.riskDelta ?? 0}`
-      : `Contract incompatible — ${diff.comparison.reason ?? 'delta suppressed'}`,
-    '',
-    '## Changed files',
-    ...(diff.comparison.changedFiles.length > 0 ? diff.comparison.changedFiles.map((f) => `- ${f}`) : ['- (none detected)']),
-    '',
-    '## Blast radius',
-    ...diff.comparison.blastRadius.flatMap((entry) => [
-      `### ${entry.changedFile}`,
-      `- Direct dependents: ${entry.directDependents.join(', ') || 'none'}`,
-      `- Transitive dependents: ${entry.transitiveDependents.join(', ') || 'none'}`,
-      `- Paths: ${entry.paths.map((p) => `${p.from}->${p.to}`).join('; ') || 'none'}`,
-    ]),
-    '',
-    '## New signals',
-    ...diff.comparison.newSignals.map((s) => `- ${s.evidenceId}: ${s.message}`),
-    '',
-    '## Worsened',
-    ...diff.comparison.worsenedSignals.map((s) => `- ${s.evidenceId}: ${s.message}`),
-    '',
-    '## Improved',
-    ...diff.comparison.improvedSignals.map((s) => `- ${s.evidenceId}: ${s.message}`),
-  ];
-  await writeFile(outputPath, `${lines.join('\n')}\n`);
-}
-
-export async function writeGitHubAnnotations(diff: DiffReport, outputPath: string): Promise<void> {
-  const lines: string[] = [];
-  const advisorySignals = [...diff.comparison.newSignals, ...diff.comparison.worsenedSignals];
-
-  for (const change of advisorySignals) {
-    if (!change.path) {
-      continue;
-    }
-    const evidence = diff.current.evidence.find((item) => item.evidenceId === change.evidenceId);
-    const level = evidence?.severity === 'high' ? 'error' : 'warning';
-    const message = `reg-score: ${change.message} (${change.signalId})`;
-    lines.push(`::${level} file=${change.path},line=1::${message}`);
-  }
-
-  if (!diff.comparison.compatible) {
-    lines.push(`::notice title=reg-score::${diff.comparison.reason ?? 'Assessment contract mismatch — compare scores cautiously'}`);
-  }
-
-  await writeFile(outputPath, `${lines.join('\n')}\n`);
-}
-
-export function formatGitHubAnnotationsStdout(diff: DiffReport): string {
-  const lines: string[] = [];
-  for (const change of [...diff.comparison.newSignals, ...diff.comparison.worsenedSignals]) {
-    if (!change.path) {
-      continue;
-    }
-    const evidence = diff.current.evidence.find((item) => item.evidenceId === change.evidenceId);
-    const level = evidence?.severity === 'high' ? 'error' : 'warning';
-    lines.push(`::${level} file=${change.path},line=1::reg-score: ${change.message}`);
-  }
-  return `${lines.join('\n')}\n`;
 }

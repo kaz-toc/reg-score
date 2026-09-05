@@ -14,7 +14,7 @@ const IMPORT_RE =
 
 function extractImports(file: SourceFile): string[] {
   const targets: string[] = [];
-  for (const match of file.content.matchAll(IMPORT_RE)) {
+  for (const match of (file.content ?? '').matchAll(IMPORT_RE)) {
     const target = match[1];
     if (target) {
       targets.push(target);
@@ -146,8 +146,13 @@ function makeEvidence(
   filePath?: string,
   metrics?: Evidence['metrics'],
 ): Evidence {
+  const target = metrics && 'target' in metrics && typeof metrics.target === 'string' ? metrics.target : undefined;
+  const evidenceKey =
+    signalId === 'unresolved-import' && filePath && target
+      ? `${filePath}:${target}`
+      : (filePath ?? 'repo');
   return {
-    evidenceId: `evidence:${signalId}:${filePath ?? 'repo'}`,
+    evidenceId: `evidence:${signalId}:${evidenceKey}`,
     signalId,
     axisId,
     path: filePath,

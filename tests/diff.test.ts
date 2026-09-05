@@ -7,7 +7,7 @@ function minimalReport(evidenceIds: Array<{ id: string; severity: 'low' | 'mediu
   return {
     metadata: {
       schemaVersion: 1,
-      assessmentContractVersion: 1,
+      assessmentContractVersion: 2,
       generatedAt: '2026-01-01T00:00:00.000Z',
       inputId: 'test',
       repositoryPath: '/tmp',
