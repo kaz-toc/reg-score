@@ -1,7 +1,9 @@
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { z } from 'zod';
+
+import { ConfigError } from '../shared/errors.js';
 
 export const policySchema = z
   .object({
@@ -20,20 +22,55 @@ export type TeamPolicy = z.infer<typeof policySchema>;
 export async function loadPolicy(repositoryPath: string, policyFile: string): Promise<TeamPolicy> {
   const policyPath = path.join(repositoryPath, policyFile);
   try {
-    const raw = await readFile(policyPath, 'utf8');
-    return policySchema.parse(JSON.parse(raw));
+    await access(policyPath);
   } catch {
     return policySchema.parse({ schemaVersion: 1 });
+  }
+
+  try {
+    const raw = await readFile(policyPath, 'utf8');
+    return policySchema.parse(JSON.parse(raw));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new ConfigError(policyPath, reason);
   }
 }
 
 export type PolicyEvaluation = {
   advisory: boolean;
   gateWouldFail: boolean;
+  gateEligible: boolean;
   reasons: string[];
 };
 
-export function evaluatePolicy(score: number, confidence: number, policy: TeamPolicy, calibrated: boolean): PolicyEvaluation {
+export type GateEligibilityInput = {
+  calibrationPresent: boolean;
+  minSamplesPerBand: boolean;
+  hasFalsePositiveRate: boolean;
+  hasMissRate: boolean;
+  hasRankingQuality: boolean;
+  hasExplanationUsefulness: boolean;
+  goldenRegressionPassed: boolean;
+};
+
+export function deriveGateEligible(input: GateEligibilityInput): boolean {
+  return (
+    input.calibrationPresent &&
+    input.minSamplesPerBand &&
+    input.hasFalsePositiveRate &&
+    input.hasMissRate &&
+    input.hasRankingQuality &&
+    input.hasExplanationUsefulness &&
+    input.goldenRegressionPassed
+  );
+}
+
+export function evaluatePolicy(
+  score: number,
+  confidence: number,
+  policy: TeamPolicy,
+  gateEligible: boolean,
+): PolicyEvaluation {
   const reasons: string[] = [];
   const advisory = score >= policy.advisoryThreshold;
   if (advisory) {
@@ -42,18 +79,15 @@ export function evaluatePolicy(score: number, confidence: number, policy: TeamPo
 
   let gateWouldFail = false;
   if (policy.gateEnabled) {
-    if (policy.requireCalibration && !calibrated) {
-      reasons.push('gate disabled: calibration required but not available');
+    if (policy.requireCalibration && !gateEligible) {
+      reasons.push('gate disabled: calibration eligibility not met');
+    } else if (confidence < 0.5) {
+      reasons.push(`low confidence ${confidence} — gate suppressed`);
     } else if (score >= policy.gateThreshold) {
       gateWouldFail = true;
       reasons.push(`score ${score} >= gate threshold ${policy.gateThreshold}`);
     }
   }
 
-  if (confidence < 0.5) {
-    reasons.push(`low confidence ${confidence} — gate should not auto-fail`);
-    gateWouldFail = false;
-  }
-
-  return { advisory, gateWouldFail, reasons };
+  return { advisory, gateWouldFail, gateEligible, reasons };
 }

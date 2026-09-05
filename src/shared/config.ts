@@ -14,8 +14,9 @@ export const configSchema = z
         enabled: z.boolean().default(false),
         provider: z.string().default('none'),
         maxFiles: z.number().int().positive().default(20),
+        sendScope: z.enum(['changed', 'cluster-context', 'all']).default('cluster-context'),
       })
-      .default({ enabled: false, provider: 'none', maxFiles: 20 }),
+      .default({ enabled: false, provider: 'none', maxFiles: 20, sendScope: 'cluster-context' }),
     baselineDir: z.string().default('.reg-score/baselines'),
     trendDir: z.string().default('.reg-score/trends'),
     policyFile: z.string().default('.reg-score/policy.json'),
@@ -37,3 +38,9 @@ export type RegScoreConfig = z.infer<typeof configSchema>;
 export const defaultConfig: RegScoreConfig = configSchema.parse({
   schemaVersion: 1,
 });
+
+export function normalizeConfig(config: RegScoreConfig): RegScoreConfig {
+  return configSchema.parse(config);
+}
+
+export type LlmConfig = RegScoreConfig['llm'];

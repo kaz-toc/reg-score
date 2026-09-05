@@ -219,7 +219,7 @@ reg-score diff . --base origin/main --format json
 | Phase | 状態 | 検証 |
 |---|---|---|
 | 0 | 完了 | `docs/spec/*`, `src/schema/report.v1.ts`, golden fixtures |
-| 1 | 完了 | `reg-score scan`, vitest 22件 |
+| 1 | 完了 | `reg-score scan`, vitest 36件 |
 | 2 | 完了 | `fragile-cart-improved` fixture, `tests/intervention.test.ts` |
 | 3 | 完了 | `reg-score diff`, blast radius, GitHub advisory workflow |
 | 4 | 完了 | calibration メトリクス, `calibration --golden`, feedback 形式 |

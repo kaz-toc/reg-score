@@ -1,19 +1,24 @@
 import type {
   AxisAssessment,
+  CapabilityResult,
   DiagnosisReport,
   Evidence,
   Intervention,
   RiskAxisId,
   RiskCluster,
   SemanticFinding,
+  SignalId,
 } from '../schema/report.v1.js';
 import {
   ASSESSMENT_CONTRACT_VERSION,
+  MECHANISM_FOR_SIGNAL,
   REPORT_SCHEMA_VERSION,
   SCORE_DISCLAIMER,
+  SIGNAL_AXIS,
   diagnosisReportSchema,
 } from '../schema/report.v1.js';
 import type { RepositorySnapshot } from '../intake/snapshot.js';
+import type { SemanticProviderResolution } from '../semantic/provider.js';
 
 const AXIS_NAMES: Record<RiskAxisId, string> = {
   'structural-fragility': 'Structural Fragility',
@@ -25,55 +30,199 @@ const AXIS_NAMES: Record<RiskAxisId, string> = {
 
 const SEVERITY_WEIGHT = { low: 1, medium: 2, high: 3 } as const;
 
-function axisScoreForEvidence(items: Evidence[]): number {
+function aggregateSignalStrength(items: Evidence[]): number {
   if (items.length === 0) {
     return 0;
   }
-  const total = items.reduce((sum, item) => sum + SEVERITY_WEIGHT[item.severity], 0);
-  return Math.min(100, Math.round((total / items.length) * 25));
+  const byKey = new Map<string, Evidence>();
+  for (const item of items) {
+    const key = `${item.signalId}:${item.path ?? 'repo'}`;
+    const existing = byKey.get(key);
+    if (!existing || SEVERITY_WEIGHT[item.severity] > SEVERITY_WEIGHT[existing.severity]) {
+      byKey.set(key, item);
+    }
+  }
+  const strengths = [...byKey.values()].map((item) => SEVERITY_WEIGHT[item.severity] * 25);
+  return Math.min(100, Math.max(...strengths));
+}
+
+function axisScoreForEvidence(items: Evidence[], semantic: SemanticFinding[]): number {
+  const deterministic = aggregateSignalStrength(items);
+  const semanticScore =
+    semantic.length > 0 ? Math.min(100, Math.round(Math.max(...semantic.map((f) => f.confidence * 100)) * 0.5)) : 0;
+  return Math.max(deterministic, semanticScore);
 }
 
 function clusterScore(items: Evidence[]): number {
-  if (items.length === 0) {
-    return 0;
-  }
-  const max = Math.max(...items.map((item) => SEVERITY_WEIGHT[item.severity] * 25));
-  const avg = items.reduce((sum, item) => sum + SEVERITY_WEIGHT[item.severity] * 25, 0) / items.length;
-  return Math.min(100, Math.round(max * 0.6 + avg * 0.4));
+  return aggregateSignalStrength(items);
 }
 
-function buildClusters(evidence: Evidence[]): RiskCluster[] {
-  const byAxis = new Map<RiskAxisId, Evidence[]>();
+function connectedPaths(paths: string[], edges: Array<{ from: string; to: string }>): string[][] {
+  const graph = new Map<string, Set<string>>();
+  for (const node of paths) {
+    graph.set(node, new Set());
+  }
+  for (const edge of edges) {
+    if (graph.has(edge.from) && graph.has(edge.to)) {
+      graph.get(edge.from)?.add(edge.to);
+      graph.get(edge.to)?.add(edge.from);
+    }
+  }
+
+  const visited = new Set<string>();
+  const components: string[][] = [];
+
+  for (const start of [...graph.keys()].sort()) {
+    if (visited.has(start)) {
+      continue;
+    }
+    const queue = [start];
+    const component: string[] = [];
+    visited.add(start);
+    while (queue.length > 0) {
+      const node = queue.shift();
+      if (!node) {
+        continue;
+      }
+      component.push(node);
+      for (const next of graph.get(node) ?? []) {
+        if (!visited.has(next)) {
+          visited.add(next);
+          queue.push(next);
+        }
+      }
+    }
+    components.push(component.sort());
+  }
+
+  return components;
+}
+
+function mechanismForEvidence(item: Evidence): string {
+  return MECHANISM_FOR_SIGNAL[item.signalId as Exclude<SignalId, 'semantic-ambiguity'>] ?? item.signalId;
+}
+
+function buildMechanismClusters(evidence: Evidence[], semanticFindings: SemanticFinding[]): RiskCluster[] {
+  const groups = new Map<string, Evidence[]>();
+
   for (const item of evidence) {
-    const list = byAxis.get(item.axisId) ?? [];
+    const mechanismId = mechanismForEvidence(item);
+    const key = `${item.axisId}:${mechanismId}`;
+    const list = groups.get(key) ?? [];
     list.push(item);
-    byAxis.set(item.axisId, list);
+    groups.set(key, list);
+  }
+
+  if (semanticFindings.length > 0) {
+    groups.set('semantic-ambiguity:semantic-ambiguity', []);
   }
 
   const clusters: RiskCluster[] = [];
-  for (const [axisId, items] of byAxis.entries()) {
-    if (items.length === 0) {
-      continue;
-    }
+
+  for (const [key, items] of groups.entries()) {
+    const [axisId, mechanismId] = key.split(':') as [RiskAxisId, string];
     const paths = [...new Set(items.map((item) => item.path).filter(Boolean) as string[])].sort();
-    clusters.push({
-      clusterId: `cluster:${axisId}`,
-      title: `${AXIS_NAMES[axisId]} クラスター`,
-      score: clusterScore(items),
-      confidence: Math.min(1, items.length / 5),
-      axisId,
-      paths,
-      failureMechanism: `${AXIS_NAMES[axisId]} に関連する構造上の弱点が、小さな変更を広範囲の振る舞い変化へ波及させる。`,
-      triggerChanges: [
-        '共有モジュールの API 変更',
-        '依存関係の追加・削除',
-        'テスト未整備領域のリファクタリング',
-      ],
-      evidenceIds: items.map((item) => item.evidenceId),
+    const edges = items
+      .flatMap((item) => {
+        const cycle = item.metrics?.cycle;
+        if (typeof cycle !== 'string') {
+          return [];
+        }
+        const nodes = cycle.split('->');
+        const localEdges: Array<{ from: string; to: string }> = [];
+        for (let index = 0; index < nodes.length - 1; index += 1) {
+          const from = nodes[index];
+          const to = nodes[index + 1];
+          if (from && to) {
+            localEdges.push({ from, to });
+          }
+        }
+        return localEdges;
+      })
+      .filter((edge) => paths.includes(edge.from) || paths.includes(edge.to));
+
+    const components =
+      mechanismId === 'dependency-cycle'
+        ? connectedPaths(paths, edges)
+        : paths.length > 0
+          ? [paths]
+          : [[]];
+
+    components.forEach((componentPaths, index) => {
+      const componentEvidence = items.filter((item) => !item.path || componentPaths.includes(item.path));
+      if (componentEvidence.length === 0 && mechanismId !== 'semantic-ambiguity') {
+        return;
+      }
+
+      const relatedFindings =
+        mechanismId === 'semantic-ambiguity'
+          ? semanticFindings
+          : semanticFindings.filter(
+              (finding) =>
+                (finding.path && componentPaths.includes(finding.path)) ||
+                finding.relatedEvidenceIds.some((id) => componentEvidence.some((item) => item.evidenceId === id)),
+            );
+
+      const evidenceIds = [
+        ...componentEvidence.map((item) => item.evidenceId),
+        ...relatedFindings.flatMap((finding) => finding.relatedEvidenceIds),
+      ];
+      const uniqueEvidenceIds = [...new Set(evidenceIds)];
+
+      clusters.push({
+        clusterId: `cluster:${axisId}:${mechanismId}:${index + 1}`,
+        title: `${AXIS_NAMES[axisId]} / ${mechanismId}`,
+        score: clusterScore(componentEvidence),
+        confidence: Math.min(1, Number((componentEvidence.length / 4).toFixed(2))),
+        axisId,
+        mechanismId,
+        paths: componentPaths,
+        failureMechanism: describeMechanism(mechanismId),
+        triggerChanges: describeTriggers(mechanismId),
+        evidenceIds: uniqueEvidenceIds,
+      });
     });
   }
 
   return clusters.sort((a, b) => b.score - a.score);
+}
+
+function describeMechanism(mechanismId: string): string {
+  switch (mechanismId) {
+    case 'dependency-cycle':
+      return '循環依存により変更が予測不能な連鎖反応を起こす。';
+    case 'high-connectivity':
+      return '高い fan-in / fan-out により小さな変更が広範囲へ波及する。';
+    case 'verification-gap':
+      return '変更影響に対する検証が不足し、デグレが検出されにくい。';
+    case 'volatility':
+      return '頻繁な変更が不安定な領域へ集中している。';
+    case 'semantic-ambiguity':
+      return '暗黙契約や命名の乖離により意図復元が困難。';
+    case 'large-file':
+      return '単一ファイルへの責務集中により変更リスクが局所化している。';
+    case 'barrel-export':
+      return 'barrel 再エクスポートが依存境界を曖昧にしている。';
+    default:
+      return `${mechanismId} に関連する構造上の弱点。`;
+  }
+}
+
+function describeTriggers(mechanismId: string): string[] {
+  switch (mechanismId) {
+    case 'dependency-cycle':
+      return ['共有モジュールの API 変更', '循環内ファイルのリファクタリング'];
+    case 'high-connectivity':
+      return ['hub モジュールの公開 API 変更', '共通型の変更'];
+    case 'verification-gap':
+      return ['テスト未整備領域の機能追加', '境界条件の変更'];
+    case 'volatility':
+      return ['高 churn ファイルの連続変更', 'revert を伴う修正'];
+    case 'semantic-ambiguity':
+      return ['命名変更', '例外分岐の追加'];
+    default:
+      return ['関連ファイルの変更'];
+  }
 }
 
 function aggregateRepositoryScore(axes: AxisAssessment[], clusters: RiskCluster[]): number {
@@ -86,27 +235,31 @@ function aggregateRepositoryScore(axes: AxisAssessment[], clusters: RiskCluster[
   return Math.min(100, Math.round(axisAvg * 0.7 + maxCluster * 0.3));
 }
 
-function computeConfidence(
-  evidence: Evidence[],
-  semanticFindings: SemanticFinding[],
-  snapshot: RepositorySnapshot,
-  axes: AxisAssessment[],
-): number {
-  const expectedAxes = 5;
-  const evaluatedAxes = axes.filter((axis) => !axis.unevaluated).length;
-  let confidence = evaluatedAxes / expectedAxes;
-  if (evidence.length > 0) {
-    confidence = Math.min(1, confidence + 0.2);
-  }
-  if (semanticFindings.length > 0) {
-    confidence = Math.min(1, confidence + 0.1);
-  }
-  if (!snapshot.gitAvailable) {
-    confidence -= 0.1;
-  }
-  if (snapshot.truncated) {
-    confidence -= 0.15;
-  }
+function computeConfidence(input: {
+  snapshot: RepositorySnapshot;
+  capabilities: CapabilityResult[];
+  selectedAnalyzers: number;
+  successfulAnalyzers: number;
+  semanticResolution: SemanticProviderResolution;
+  axes: AxisAssessment[];
+}): number {
+  const expectedSignals = input.capabilities.flatMap((entry) => [...entry.supportedSignals, ...entry.unevaluatedSignals]);
+  const supportedSignals = input.capabilities.flatMap((entry) => entry.supportedSignals);
+  const capabilityRatio = expectedSignals.length > 0 ? supportedSignals.length / expectedSignals.length : 1;
+  const analyzerRatio =
+    input.selectedAnalyzers > 0 ? input.successfulAnalyzers / input.selectedAnalyzers : 1;
+  const gitFactor = input.snapshot.gitAvailable ? 1 : 0.85;
+  const truncationFactor = input.snapshot.truncated ? 0.85 : 1;
+  const semanticFactor =
+    input.semanticResolution.status === 'available'
+      ? 1
+      : input.snapshot.config.llm.enabled
+        ? 0.85
+        : 0.95;
+
+  const confidence =
+    capabilityRatio * 0.35 + analyzerRatio * 0.25 + gitFactor * 0.15 + truncationFactor * 0.15 + semanticFactor * 0.1;
+
   return Math.max(0, Math.min(1, Number(confidence.toFixed(2))));
 }
 
@@ -114,7 +267,11 @@ export type AssessmentInput = {
   snapshot: RepositorySnapshot;
   evidence: Evidence[];
   semanticFindings: SemanticFinding[];
+  capabilities: CapabilityResult[];
   analyzers: string[];
+  selectedAnalyzers: number;
+  successfulAnalyzers: number;
+  semanticResolution: SemanticProviderResolution;
   llmProvider?: string;
   baselineScore?: number;
   baselineId?: string;
@@ -123,34 +280,68 @@ export type AssessmentInput = {
 
 export function assessRisk(input: AssessmentInput): DiagnosisReport {
   const axisIds = Object.keys(AXIS_NAMES) as RiskAxisId[];
+  const semanticAxisUnevaluated =
+    input.semanticResolution.status !== 'available' ||
+    (input.snapshot.config.llm.enabled && input.semanticFindings.length === 0);
+
   const axes: AxisAssessment[] = axisIds.map((axisId) => {
     const axisEvidence = input.evidence.filter((item) => item.axisId === axisId);
     const semantic = input.semanticFindings.filter((item) => item.axisId === axisId);
-    const unevaluated = axisId === 'semantic-ambiguity' && semantic.length === 0 && !input.snapshot.config.llm.enabled;
-    const score = unevaluated ? 0 : Math.max(axisScoreForEvidence(axisEvidence), semantic.length > 0 ? 20 : 0);
-    const confidence = unevaluated ? 0 : Math.min(1, axisEvidence.length / 3);
+    const unevaluated = axisId === 'semantic-ambiguity' && semanticAxisUnevaluated;
+    const score = unevaluated ? 0 : axisScoreForEvidence(axisEvidence, semantic);
+    const languageCapability = input.capabilities.find((entry) =>
+      entry.unevaluatedSignals.some((signal) => SIGNAL_AXIS[signal as Exclude<SignalId, 'semantic-ambiguity'>] === axisId),
+    );
+    const axisConfidence = unevaluated
+      ? 0
+      : Math.min(1, Number(((axisEvidence.length > 0 ? 0.6 : 0) + (languageCapability ? 0.4 : 0.2)).toFixed(2)));
     return {
       axisId,
       name: AXIS_NAMES[axisId],
       score,
       contribution: 0,
-      confidence: Number(confidence.toFixed(2)),
+      confidence: axisConfidence,
       unevaluated,
     };
   });
 
-  const clusters = buildClusters(input.evidence);
+  const clusters = buildMechanismClusters(input.evidence, input.semanticFindings);
   const repositoryScore = aggregateRepositoryScore(axes, clusters);
   const totalContribution = axes.filter((a) => !a.unevaluated).reduce((sum, a) => sum + a.score, 0) || 1;
   for (const axis of axes) {
     axis.contribution = axis.unevaluated ? 0 : Number((axis.score / totalContribution).toFixed(2));
   }
 
-  const confidence = computeConfidence(input.evidence, input.semanticFindings, input.snapshot, axes);
+  const confidence = computeConfidence({
+    snapshot: input.snapshot,
+    capabilities: input.capabilities,
+    selectedAnalyzers: input.selectedAnalyzers,
+    successfulAnalyzers: input.successfulAnalyzers,
+    semanticResolution: input.semanticResolution,
+    axes,
+  });
+
   const unevaluatedAreas = axes.filter((a) => a.unevaluated).map((a) => a.name);
+  for (const capability of input.capabilities) {
+    for (const signal of capability.unevaluatedSignals) {
+      unevaluatedAreas.push(`${capability.language}:signal:${signal}`);
+    }
+  }
+  for (const issue of input.snapshot.intakeIssues) {
+    unevaluatedAreas.push(`${issue.kind}:${issue.path}`);
+  }
   if (!input.snapshot.gitAvailable) {
     unevaluatedAreas.push('Git churn (git unavailable)');
   }
+
+  const semanticProviderStatus =
+    input.semanticResolution.status === 'available'
+      ? ('available' as const)
+      : input.snapshot.config.llm.enabled
+        ? input.semanticResolution.reason.includes('failed')
+          ? ('failed' as const)
+          : ('unavailable' as const)
+        : ('not-configured' as const);
 
   const report: DiagnosisReport = {
     metadata: {
@@ -159,10 +350,14 @@ export function assessRisk(input: AssessmentInput): DiagnosisReport {
       generatedAt: new Date().toISOString(),
       inputId: input.snapshot.inputId,
       repositoryPath: input.snapshot.repositoryPath,
+      unitId: input.snapshot.unitId,
       analyzers: input.analyzers,
       llmProvider: input.llmProvider,
       truncated: input.snapshot.truncated,
-      unevaluatedAreas,
+      unevaluatedAreas: [...new Set(unevaluatedAreas)].sort(),
+      semanticProviderStatus,
+      semanticProviderReason:
+        input.semanticResolution.status === 'unavailable' ? input.semanticResolution.reason : undefined,
     },
     repository: {
       regressionRiskScore: repositoryScore,
@@ -180,6 +375,7 @@ export function assessRisk(input: AssessmentInput): DiagnosisReport {
     evidence: input.evidence,
     semanticFindings: input.semanticFindings,
     interventions: [],
+    capabilities: input.capabilities,
   };
 
   return diagnosisReportSchema.parse(report);

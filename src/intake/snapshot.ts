@@ -1,51 +1,106 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { RegScoreConfig } from '../shared/config.js';
-import { configSchema, defaultConfig } from '../shared/config.js';
+import { configSchema, defaultConfig, normalizeConfig } from '../shared/config.js';
+import { ConfigError, IntakeError } from '../shared/errors.js';
+import { ASSESSMENT_CONTRACT_VERSION } from '../schema/report.v1.js';
+import { getRegisteredExtensions } from '../plugins/analyzer.js';
 
 export type SourceFile = {
   relativePath: string;
   absolutePath: string;
   extension: string;
   content: string;
+  contentHash: string;
   nonBlankLines: number;
+};
+
+export type IntakeIssue = {
+  kind: 'unreadable-file' | 'missing-unit-root' | 'truncated';
+  path: string;
+  message: string;
 };
 
 export type RepositorySnapshot = {
   repositoryPath: string;
+  unitId?: string;
   inputId: string;
   files: SourceFile[];
   gitAvailable: boolean;
   truncated: boolean;
+  intakeIssues: IntakeIssue[];
   config: RegScoreConfig;
 };
-
-const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 
 function countNonBlankLines(content: string): number {
   return content.split('\n').filter((line) => line.trim().length > 0).length;
 }
 
-function isExcluded(relativePath: string, exclude: string[]): boolean {
+function hashContent(content: string): string {
+  return createHash('sha256').update(content).digest('hex');
+}
+
+function matchGlob(relativePath: string, pattern: string): boolean {
+  const normalized = relativePath.replace(/\\/g, '/');
+  const regex = new RegExp(
+    `^${pattern
+      .replace(/\\/g, '/')
+      .replace(/\./g, '\\.')
+      .replace(/\*\*/g, '§§')
+      .replace(/\*/g, '[^/]*')
+      .replace(/§§/g, '.*')
+      .replace(/\?/g, '[^/]')}$`,
+  );
+  return regex.test(normalized);
+}
+
+export function isExcluded(relativePath: string, exclude: string[]): boolean {
   const segments = relativePath.split(path.sep);
-  return exclude.some((pattern) => segments.includes(pattern) || relativePath.includes(pattern));
+  return exclude.some((pattern) => {
+    if (pattern.includes('*') || pattern.includes('?')) {
+      return matchGlob(relativePath, pattern);
+    }
+    return segments.includes(pattern);
+  });
+}
+
+function resolveUnitRoot(repositoryPath: string, root: string): string {
+  const resolved = path.resolve(repositoryPath, root);
+  const relative = path.relative(repositoryPath, resolved);
+  if (relative.startsWith('..') || path.isAbsolute(root)) {
+    throw new IntakeError(`unit root escapes repository: ${root}`);
+  }
+  return resolved;
 }
 
 async function walkFiles(
-  root: string,
+  repositoryPath: string,
   current: string,
   exclude: string[],
+  extensions: Set<string>,
   maxFiles: number,
   collected: SourceFile[],
+  issues: IntakeIssue[],
 ): Promise<boolean> {
   if (collected.length >= maxFiles) {
     return true;
   }
 
-  const { readdir } = await import('node:fs/promises');
-  const entries = await readdir(current, { withFileTypes: true });
+  const { readdir, lstat } = await import('node:fs/promises');
+  let entries;
+  try {
+    entries = await readdir(current, { withFileTypes: true });
+  } catch {
+    issues.push({
+      kind: 'missing-unit-root',
+      path: path.relative(repositoryPath, current) || '.',
+      message: 'unit root is missing or unreadable',
+    });
+    return false;
+  }
+
   entries.sort((a, b) => a.name.localeCompare(b.name));
 
   for (const entry of entries) {
@@ -54,33 +109,51 @@ async function walkFiles(
     }
 
     const absolutePath = path.join(current, entry.name);
-    const relativePath = path.relative(root, absolutePath);
+    const relativePath = path.relative(repositoryPath, absolutePath);
 
     if (isExcluded(relativePath, exclude)) {
       continue;
     }
 
-    if (entry.isDirectory()) {
-      const truncated = await walkFiles(root, absolutePath, exclude, maxFiles, collected);
+    const stat = await lstat(absolutePath);
+    if (stat.isSymbolicLink()) {
+      continue;
+    }
+
+    if (stat.isDirectory()) {
+      const truncated = await walkFiles(repositoryPath, absolutePath, exclude, extensions, maxFiles, collected, issues);
       if (truncated) {
         return true;
       }
       continue;
     }
 
-    const extension = path.extname(entry.name);
-    if (!SOURCE_EXTENSIONS.has(extension)) {
+    if (!stat.isFile()) {
       continue;
     }
 
-    const content = await readFile(absolutePath, 'utf8');
-    collected.push({
-      relativePath,
-      absolutePath,
-      extension,
-      content,
-      nonBlankLines: countNonBlankLines(content),
-    });
+    const extension = path.extname(entry.name);
+    if (!extensions.has(extension)) {
+      continue;
+    }
+
+    try {
+      const content = await readFile(absolutePath, 'utf8');
+      collected.push({
+        relativePath,
+        absolutePath,
+        extension,
+        content,
+        contentHash: hashContent(content),
+        nonBlankLines: countNonBlankLines(content),
+      });
+    } catch {
+      issues.push({
+        kind: 'unreadable-file',
+        path: relativePath,
+        message: 'file could not be read',
+      });
+    }
   }
 
   return false;
@@ -98,13 +171,14 @@ async function gitAvailable(repositoryPath: string): Promise<boolean> {
   }
 }
 
-export function computeInputId(repositoryPath: string, files: SourceFile[], config: RegScoreConfig): string {
+export function computeInputId(unitId: string | undefined, files: SourceFile[], config: RegScoreConfig): string {
   const hash = createHash('sha256');
-  hash.update(repositoryPath);
-  hash.update(JSON.stringify(config));
-  for (const file of files) {
+  hash.update(String(ASSESSMENT_CONTRACT_VERSION));
+  hash.update(JSON.stringify(normalizeConfig(config)));
+  hash.update(unitId ?? '');
+  for (const file of [...files].sort((a, b) => a.relativePath.localeCompare(b.relativePath))) {
     hash.update(file.relativePath);
-    hash.update(String(file.nonBlankLines));
+    hash.update(file.contentHash);
   }
   return hash.digest('hex').slice(0, 16);
 }
@@ -112,10 +186,17 @@ export function computeInputId(repositoryPath: string, files: SourceFile[], conf
 export async function loadConfig(repositoryPath: string): Promise<RegScoreConfig> {
   const configPath = path.join(repositoryPath, 'reg-score.config.json');
   try {
-    const raw = await readFile(configPath, 'utf8');
-    return configSchema.parse(JSON.parse(raw));
+    await access(configPath);
   } catch {
     return defaultConfig;
+  }
+
+  try {
+    const raw = await readFile(configPath, 'utf8');
+    return configSchema.parse(JSON.parse(raw));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new ConfigError(configPath, reason);
   }
 }
 
@@ -124,16 +205,26 @@ export async function createRepositorySnapshot(repositoryPath: string, unitId?: 
   const config = await loadConfig(resolved);
   const unit = unitId ? config.units.find((entry) => entry.id === unitId) : undefined;
   if (unitId && !unit) {
-    throw new Error(`unknown unit: ${unitId}`);
+    throw new IntakeError(`unknown unit: ${unitId}`);
   }
 
-  const roots = unit ? unit.roots.map((root) => path.join(resolved, root)) : [resolved];
+  const extensions = getRegisteredExtensions();
+  const roots = unit ? unit.roots.map((root) => resolveUnitRoot(resolved, root)) : [resolved];
   const files: SourceFile[] = [];
+  const intakeIssues: IntakeIssue[] = [];
   let truncated = false;
 
   for (const root of roots) {
-    const rootTruncated = await walkFiles(resolved, root, config.exclude, config.maxFiles, files);
+    const rootTruncated = await walkFiles(resolved, root, config.exclude, extensions, config.maxFiles, files, intakeIssues);
     truncated = truncated || rootTruncated;
+  }
+
+  if (truncated) {
+    intakeIssues.push({
+      kind: 'truncated',
+      path: resolved,
+      message: `file collection reached maxFiles=${config.maxFiles}`,
+    });
   }
 
   const uniqueFiles = [...new Map(files.map((file) => [file.relativePath, file])).values()].sort((a, b) =>
@@ -144,10 +235,12 @@ export async function createRepositorySnapshot(repositoryPath: string, unitId?: 
 
   return {
     repositoryPath: resolved,
-    inputId: computeInputId(resolved, uniqueFiles, config),
+    unitId,
+    inputId: computeInputId(unitId, uniqueFiles, config),
     files: uniqueFiles,
     gitAvailable: git,
     truncated,
+    intakeIssues,
     config,
   };
 }

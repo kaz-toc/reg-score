@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { createRepositorySnapshot } from '../src/intake/snapshot.js';
 import { runDiagnosis } from '../src/pipeline/diagnose.js';
 import { analyzeTrend } from '../src/operations/trend.js';
-import type { TrendEntry } from '../src/operations/trend.js';
+import type { TrendEntry } from '../src/schema/report.v1.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 
@@ -22,6 +22,7 @@ describe('phase 5-6 operations', () => {
   it('analyzes trend degradation', () => {
     const entries: TrendEntry[] = [
       {
+        schemaVersion: 1,
         generatedAt: '2026-01-01T00:00:00.000Z',
         inputId: 'a',
         score: 30,
@@ -29,9 +30,10 @@ describe('phase 5-6 operations', () => {
         contractVersion: 1,
         commitSha: 'aaa',
         changedFiles: ['src/a.ts'],
-        topClusters: [{ clusterId: 'cluster:structural-fragility', score: 40 }],
+        topClusters: [{ clusterId: 'cluster:structural-fragility:dependency-cycle:1', score: 40 }],
       },
       {
+        schemaVersion: 1,
         generatedAt: '2026-01-02T00:00:00.000Z',
         inputId: 'b',
         score: 55,
@@ -39,13 +41,13 @@ describe('phase 5-6 operations', () => {
         contractVersion: 1,
         commitSha: 'bbb',
         changedFiles: ['src/b.ts'],
-        topClusters: [{ clusterId: 'cluster:structural-fragility', score: 70 }],
+        topClusters: [{ clusterId: 'cluster:structural-fragility:dependency-cycle:1', score: 70 }],
       },
     ];
     const analysis = analyzeTrend(entries);
-    expect(analysis.degradationStartAt).toBe('2026-01-02T00:00:00.000Z');
+    expect(analysis.degradationStartAt).toBe('2026-01-01T00:00:00.000Z');
     expect(analysis.scoreDeltaFromFirst).toBe(25);
-    expect(analysis.contributingClusterIds).toContain('cluster:structural-fragility');
+    expect(analysis.contributingClusterIds).toContain('cluster:structural-fragility:dependency-cycle:1');
     expect(analysis.contributingChanges).toHaveLength(1);
     expect(analysis.contributingChanges[0]?.commitSha).toBe('bbb');
   });

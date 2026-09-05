@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import type { Evidence, RiskAxisId } from '../schema/report.v1.js';
+import type { Evidence, RiskAxisId, SignalId } from '../schema/report.v1.js';
 import type { RepositorySnapshot, SourceFile } from '../intake/snapshot.js';
 
 export type ImportEdge = {
@@ -107,7 +107,12 @@ export function findImportCycles(edges: ImportEdge[]): string[][] {
     dfs(node, new Set(), []);
   }
 
-  return cycles;
+  const uniqueCycles = [...new Map(cycles.map((cycle) => {
+    const key = [...new Set(cycle)].sort().join('->');
+    return [key, [...new Set(cycle)].sort()] as const;
+  })).values()];
+
+  return uniqueCycles;
 }
 
 function expectedTestPath(sourcePath: string): string | null {
@@ -134,7 +139,7 @@ function maxBraceDepth(content: string): number {
 }
 
 function makeEvidence(
-  signalId: string,
+  signalId: SignalId,
   axisId: RiskAxisId,
   severity: Evidence['severity'],
   message: string,
@@ -142,7 +147,7 @@ function makeEvidence(
   metrics?: Evidence['metrics'],
 ): Evidence {
   return {
-    evidenceId: `${signalId}:${filePath ?? 'repo'}`,
+    evidenceId: `evidence:${signalId}:${filePath ?? 'repo'}`,
     signalId,
     axisId,
     path: filePath,
@@ -212,16 +217,16 @@ export async function extractDeterministicEvidence(snapshot: RepositorySnapshot)
 
   for (const cycle of findImportCycles(edges)) {
     const unique = [...new Set(cycle)].sort();
-    evidence.push(
-      makeEvidence(
-        'dep-cycle',
-        'structural-fragility',
-        'high',
-        `循環依存: ${unique.join(' -> ')}`,
-        unique[0],
-        { cycle: unique.join('->') },
-      ),
-    );
+    evidence.push({
+      evidenceId: `evidence:dep-cycle:${unique.join('->')}`,
+      signalId: 'dep-cycle',
+      axisId: 'structural-fragility',
+      path: unique[0],
+      severity: 'high',
+      message: `循環依存: ${unique.join(' -> ')}`,
+      metrics: { cycle: unique.join('->') },
+      source: 'deterministic',
+    });
   }
 
   for (const file of snapshot.files) {

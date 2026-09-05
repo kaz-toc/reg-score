@@ -1,18 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import type { DiagnosisReport, Intervention } from '../schema/report.v1.js';
-
-export type TrendEntry = {
-  generatedAt: string;
-  inputId: string;
-  score: number;
-  confidence: number;
-  contractVersion: number;
-  commitSha?: string;
-  changedFiles?: string[];
-  topClusters: Array<{ clusterId: string; score: number }>;
-};
+import type { DiagnosisReport, Intervention, TrendEntry } from '../schema/report.v1.js';
+import { trendEntrySchema } from '../schema/report.v1.js';
+import { RegScoreError } from '../shared/errors.js';
 
 export type ContributingChange = {
   generatedAt: string;
@@ -55,21 +46,38 @@ export function rankInvestmentPriorities(report: DiagnosisReport): InvestmentPri
 }
 
 export async function loadTrendHistory(trendPath: string): Promise<TrendEntry[]> {
+  let raw: string;
   try {
-    const raw = await readFile(trendPath, 'utf8');
-    return raw
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as TrendEntry);
+    raw = await readFile(trendPath, 'utf8');
   } catch {
     return [];
   }
+
+  const entries: TrendEntry[] = [];
+  const lines = raw.split('\n');
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]?.trim();
+    if (!line) {
+      continue;
+    }
+    try {
+      entries.push(trendEntrySchema.parse(JSON.parse(line)));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new RegScoreError(`trend history parse error at line ${index + 1}: ${reason}`);
+    }
+  }
+  return entries;
 }
 
 export function analyzeTrend(entries: TrendEntry[]): TrendAnalysis {
   if (entries.length === 0) {
     return { entries: [], scoreDeltaFromFirst: 0, contributingClusterIds: [], contributingChanges: [] };
+  }
+
+  const contractVersions = new Set(entries.map((entry) => entry.contractVersion));
+  if (contractVersions.size > 1) {
+    throw new RegScoreError('trend entries span multiple assessment contract versions');
   }
 
   const sorted = [...entries].sort((a, b) => a.generatedAt.localeCompare(b.generatedAt));
@@ -82,22 +90,26 @@ export function analyzeTrend(entries: TrendEntry[]): TrendAnalysis {
   const scoreDeltaFromFirst = last.score - first.score;
 
   let degradationStartAt: string | undefined;
-  for (let index = 1; index < sorted.length; index += 1) {
+  for (let index = sorted.length - 1; index > 0; index -= 1) {
     const current = sorted[index];
     const previous = sorted[index - 1];
     if (current && previous && current.score > previous.score) {
-      degradationStartAt = current.generatedAt;
+      degradationStartAt = previous.generatedAt;
+    } else if (degradationStartAt) {
       break;
     }
   }
 
-  const contributingClusterIds = [
-    ...new Set(last.topClusters.filter((cluster) => cluster.score >= 50).map((cluster) => cluster.clusterId)),
-  ];
+  const startEntry = degradationStartAt ? sorted.find((entry) => entry.generatedAt === degradationStartAt) : undefined;
+  const startClusters = new Map((startEntry?.topClusters ?? []).map((cluster) => [cluster.clusterId, cluster.score]));
+  const contributingClusterIds = last.topClusters
+    .filter((cluster) => (startClusters.get(cluster.clusterId) ?? 0) < cluster.score)
+    .map((cluster) => cluster.clusterId);
 
   const contributingChanges: ContributingChange[] = degradationStartAt
     ? sorted
-        .filter((entry) => entry.generatedAt >= degradationStartAt)
+        .filter((entry) => entry.generatedAt > degradationStartAt)
+        .filter((entry, idx, arr) => idx === 0 || entry.score > (arr[idx - 1]?.score ?? entry.score))
         .map((entry) => ({
           generatedAt: entry.generatedAt,
           commitSha: entry.commitSha,

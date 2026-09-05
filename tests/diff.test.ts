@@ -23,7 +23,7 @@ function minimalReport(evidenceIds: Array<{ id: string; severity: 'low' | 'mediu
     axes: [],
     clusters: [],
     evidence: evidenceIds.map((entry) => ({
-      evidenceId: entry.id,
+      evidenceId: `evidence:dep-cycle:${entry.id}`,
       signalId: 'dep-cycle',
       axisId: 'structural-fragility',
       severity: entry.severity,
@@ -32,6 +32,7 @@ function minimalReport(evidenceIds: Array<{ id: string; severity: 'low' | 'mediu
     })),
     semanticFindings: [],
     interventions: [],
+    capabilities: [],
   };
 }
 
@@ -40,9 +41,9 @@ describe('diff diagnostics', () => {
     const base = minimalReport([{ id: 'a', severity: 'low' }, { id: 'b', severity: 'high' }]);
     const current = minimalReport([{ id: 'a', severity: 'medium' }, { id: 'c', severity: 'low' }]);
     const changes = compareSignalChanges(current, base);
-    expect(changes.newSignals).toContain('c');
-    expect(changes.worsenedSignals).toContain('a');
-    expect(changes.improvedSignals).toContain('b');
+    expect(changes.newSignals.map((item) => item.evidenceId)).toContain('evidence:dep-cycle:c');
+    expect(changes.worsenedSignals.map((item) => item.evidenceId)).toContain('evidence:dep-cycle:a');
+    expect(changes.improvedSignals.map((item) => item.evidenceId)).toContain('evidence:dep-cycle:b');
   });
 
   it('computes blast radius for changed files', () => {
@@ -52,5 +53,7 @@ describe('diff diagnostics', () => {
     ];
     const radius = computeBlastRadius(['src/a.ts'], '/repo', files);
     expect(radius[0]?.directDependents).toContain('src/b.ts');
+    expect(radius[0]?.transitiveDependents).toContain('src/b.ts');
+    expect(radius[0]?.paths.length).toBeGreaterThan(0);
   });
 });
