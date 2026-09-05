@@ -193,6 +193,31 @@ describe('integration: CLI retention audits', () => {
       await repo.cleanup();
     }
   });
+
+  it('formats the baseline save audit to stderr', async () => {
+    const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
+    try {
+      const baselineDir = path.join(repo.path, '.reg-score', 'baselines');
+      await mkdir(baselineDir, { recursive: true });
+      const expiredBaselinePath = path.join(baselineDir, 'expired.json');
+      await writeFile(expiredBaselinePath, '{}');
+      await utimes(expiredBaselinePath, new Date('2026-01-01T00:00:00.000Z'), new Date('2026-01-01T00:00:00.000Z'));
+
+      const cliPath = path.join(root, '..', 'src', 'cli.ts');
+      const tsxPath = path.join(root, '..', 'node_modules', 'tsx', 'dist', 'cli.mjs');
+      const { stderr } = await execFileAsync(process.execPath, [
+        tsxPath,
+        cliPath,
+        'baseline',
+        repo.path,
+        '--save',
+      ]);
+
+      expect(stderr).toBe('retention storage=baseline reason=expired removed=1\n');
+    } finally {
+      await repo.cleanup();
+    }
+  });
 });
 
 describe('integration: diff report contract', () => {
