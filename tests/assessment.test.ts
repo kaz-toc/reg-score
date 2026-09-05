@@ -172,6 +172,92 @@ describe('assessment contract', () => {
     expect(report.repository.regressionRiskScore).toBe(0);
   });
 
+  it('scores only supported signals when an axis has mixed capability support', () => {
+    const report = assessRisk({
+      snapshot: baseSnapshot as never,
+      evidence: [
+        {
+          evidenceId: 'evidence:dep-cycle:src/a.ts->src/b.ts',
+          signalId: 'dep-cycle',
+          axisId: 'structural-fragility',
+          path: 'src/a.ts',
+          severity: 'high',
+          message: 'manually supplied dependency cycle',
+          source: 'deterministic',
+        },
+        {
+          evidenceId: 'evidence:large-file:src/c.ts',
+          signalId: 'large-file',
+          axisId: 'structural-fragility',
+          path: 'src/c.ts',
+          severity: 'low',
+          message: 'supported large file',
+          source: 'deterministic',
+        },
+      ],
+      semanticFindings: [],
+      capabilities: [
+        {
+          language: 'typescript-javascript',
+          completeness: 'partial',
+          supportedSignals: ['large-file'],
+          unevaluatedSignals: ['dep-cycle'],
+          analyzerId: 'typescript-javascript-v1',
+        },
+      ],
+      analyzers: ['typescript-javascript-v1'],
+      selectedAnalyzers: 1,
+      successfulAnalyzers: 1,
+      semanticResolution: { status: 'unavailable', reason: 'LLM not configured' },
+    });
+
+    expect(report.axes.find((axis) => axis.axisId === 'structural-fragility')).toMatchObject({
+      unevaluated: false,
+      score: 25,
+    });
+    expect(report.clusters.some((cluster) => cluster.mechanismId === 'dependency-cycle')).toBe(false);
+    expect(report.clusters.some((cluster) => cluster.mechanismId === 'large-file')).toBe(true);
+    expect(report.repository.regressionRiskScore).toBe(25);
+  });
+
+  it('does not let unsupported semantic evidence affect clusters or repository score', () => {
+    const report = assessRisk({
+      snapshot: baseSnapshot as never,
+      evidence: [
+        {
+          evidenceId: 'evidence:semantic-ambiguity:src/a.ts',
+          signalId: 'semantic-ambiguity',
+          axisId: 'semantic-ambiguity',
+          path: 'src/a.ts',
+          severity: 'high',
+          message: 'manually supplied semantic evidence',
+          source: 'semantic',
+        },
+      ],
+      semanticFindings: [],
+      capabilities: [
+        {
+          language: 'typescript-javascript',
+          completeness: 'partial',
+          supportedSignals: ['large-file'],
+          unevaluatedSignals: ['semantic-ambiguity'],
+          analyzerId: 'typescript-javascript-v1',
+        },
+      ],
+      analyzers: ['typescript-javascript-v1'],
+      selectedAnalyzers: 1,
+      successfulAnalyzers: 1,
+      semanticResolution: { status: 'unavailable', reason: 'LLM not configured' },
+    });
+
+    expect(report.axes.find((axis) => axis.axisId === 'semantic-ambiguity')).toMatchObject({
+      unevaluated: true,
+      score: 0,
+    });
+    expect(report.clusters.some((cluster) => cluster.axisId === 'semantic-ambiguity')).toBe(false);
+    expect(report.repository.regressionRiskScore).toBe(0);
+  });
+
   it('clusters by mechanism rather than axis only', () => {
     const evidence: Evidence[] = [
       {

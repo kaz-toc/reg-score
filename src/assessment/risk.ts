@@ -19,7 +19,7 @@ import {
 } from '../schema/report.v1.js';
 import type { RepositorySnapshot } from '../intake/snapshot.js';
 import type { SemanticProviderResolution } from '../semantic/provider.js';
-import { axisHasSupportedSignals } from './capability.js';
+import { axisHasSupportedSignals, isSignalSupported } from './capability.js';
 
 const AXIS_NAMES: Record<RiskAxisId, string> = {
   'structural-fragility': 'Structural Fragility',
@@ -281,12 +281,10 @@ export function assessRisk(input: AssessmentInput): DiagnosisReport {
   const semanticAxisUnevaluated =
     input.semanticResolution.status !== 'available' ||
     (input.snapshot.config.llm.enabled && input.semanticFindings.length === 0);
-  const evaluatedEvidence = input.evidence.filter(
-    (item) => item.axisId === 'semantic-ambiguity' || axisHasSupportedSignals(item.axisId, input.capabilities),
-  );
+  const evaluatedEvidence = input.evidence.filter((item) => isSignalSupported(item.signalId, input.capabilities));
 
   const axes: AxisAssessment[] = axisIds.map((axisId) => {
-    const axisEvidence = input.evidence.filter((item) => item.axisId === axisId);
+    const axisEvidence = evaluatedEvidence.filter((item) => item.axisId === axisId);
     const semantic = input.semanticFindings.filter((item) => item.axisId === axisId);
     const unevaluated =
       axisId === 'semantic-ambiguity'
