@@ -214,6 +214,18 @@ reg-score diff . --base origin/main --format json
 - 高リスク状態での推奨対応がチームの開発フローに組み込まれる。
 - gate の判断根拠を人間が再現・監査できる。
 
+### フェーズ完了状況（2026-09-05）
+
+| Phase | 状態 | 検証 |
+|---|---|---|
+| 0 | 完了 | `docs/spec/*`, `src/schema/report.v1.ts`, golden fixtures |
+| 1 | 完了 | `reg-score scan`, vitest 20件 |
+| 2 | 完了 | `fragile-cart-improved` fixture, `tests/intervention.test.ts` |
+| 3 | 完了 | `reg-score diff`, blast radius, GitHub advisory workflow |
+| 4 | 完了 | `.reg-score/calibration.json`, feedback 形式, golden 回帰 |
+| 5 | 完了 | plugin contract, `--unit`, Python/Go スタブ |
+| 6 | 完了 | `trend --analyze`, `priorities`, audit/retention ポリシー |
+
 ## 7. 最初のリリース境界
 
 最初の公開可能なリリースは Phase 0 と Phase 1 に限定する。

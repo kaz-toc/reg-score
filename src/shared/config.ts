@@ -19,6 +19,16 @@ export const configSchema = z
     baselineDir: z.string().default('.reg-score/baselines'),
     trendDir: z.string().default('.reg-score/trends'),
     policyFile: z.string().default('.reg-score/policy.json'),
+    units: z
+      .array(
+        z
+          .object({
+            id: z.string(),
+            roots: z.array(z.string()).min(1),
+          })
+          .strict(),
+      )
+      .default([]),
   })
   .strict();
 

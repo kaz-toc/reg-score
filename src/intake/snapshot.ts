@@ -119,17 +119,33 @@ export async function loadConfig(repositoryPath: string): Promise<RegScoreConfig
   }
 }
 
-export async function createRepositorySnapshot(repositoryPath: string): Promise<RepositorySnapshot> {
+export async function createRepositorySnapshot(repositoryPath: string, unitId?: string): Promise<RepositorySnapshot> {
   const resolved = path.resolve(repositoryPath);
   const config = await loadConfig(resolved);
+  const unit = unitId ? config.units.find((entry) => entry.id === unitId) : undefined;
+  if (unitId && !unit) {
+    throw new Error(`unknown unit: ${unitId}`);
+  }
+
+  const roots = unit ? unit.roots.map((root) => path.join(resolved, root)) : [resolved];
   const files: SourceFile[] = [];
-  const truncated = await walkFiles(resolved, resolved, config.exclude, config.maxFiles, files);
+  let truncated = false;
+
+  for (const root of roots) {
+    const rootTruncated = await walkFiles(resolved, root, config.exclude, config.maxFiles, files);
+    truncated = truncated || rootTruncated;
+  }
+
+  const uniqueFiles = [...new Map(files.map((file) => [file.relativePath, file])).values()].sort((a, b) =>
+    a.relativePath.localeCompare(b.relativePath),
+  );
+
   const git = await gitAvailable(resolved);
 
   return {
     repositoryPath: resolved,
-    inputId: computeInputId(resolved, files, config),
-    files,
+    inputId: computeInputId(resolved, uniqueFiles, config),
+    files: uniqueFiles,
     gitAvailable: git,
     truncated,
     config,

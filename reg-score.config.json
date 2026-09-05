@@ -13,5 +13,9 @@
   },
   "baselineDir": ".reg-score/baselines",
   "trendDir": ".reg-score/trends",
-  "policyFile": ".reg-score/policy.json"
+  "policyFile": ".reg-score/policy.json",
+  "units": [
+    { "id": "core", "roots": ["src/evidence", "src/assessment"] },
+    { "id": "cli", "roots": ["src/commands"] }
+  ]
 }

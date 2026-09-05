@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { createRepositorySnapshot } from './intake/snapshot.js';
 import { appendTrend, runDiagnosis, saveBaseline } from './pipeline/diagnose.js';
 import { formatReport } from './reporting/format.js';
-import { runDiffDiagnosis, writeGitHubSummary } from './commands/diff.js';
+import { runDiffDiagnosis, writeGitHubSummary, writeGitHubAnnotations } from './commands/diff.js';
 import { loadPolicy, evaluatePolicy } from './operations/policy.js';
 import { loadCalibration, summarizeCalibration } from './calibration/dataset.js';
+import { analyzeTrend, loadTrendHistory, rankInvestmentPriorities, trendPathFor } from './operations/trend.js';
 import {
   GoStubAnalyzerPlugin,
   PythonStubAnalyzerPlugin,
@@ -26,9 +26,10 @@ program
   .option('--format <format>', 'console|markdown|json', 'console')
   .option('--save-baseline', 'save report as baseline', false)
   .option('--record-trend', 'append score to trend history', false)
-  .action(async (repoPath: string, options: { format: string; saveBaseline: boolean; recordTrend: boolean }) => {
+  .option('--unit <id>', 'monorepo unit id from reg-score.config.json')
+  .action(async (repoPath: string, options: { format: string; saveBaseline: boolean; recordTrend: boolean; unit?: string }) => {
     const format = options.format as 'console' | 'markdown' | 'json';
-    const snapshot = await createRepositorySnapshot(repoPath);
+    const snapshot = await createRepositorySnapshot(repoPath, options.unit);
     const report = await runDiagnosis(snapshot);
 
     if (options.saveBaseline) {
@@ -49,12 +50,16 @@ program
   .requiredOption('--base <ref>', 'git ref for baseline comparison')
   .option('--format <format>', 'console|markdown|json', 'console')
   .option('--github-summary <file>', 'write GitHub job summary markdown')
-  .action(async (repoPath: string, options: { base: string; format: string; githubSummary?: string }) => {
+  .option('--github-annotations <file>', 'write GitHub workflow annotations')
+  .action(async (repoPath: string, options: { base: string; format: string; githubSummary?: string; githubAnnotations?: string }) => {
     const diff = await runDiffDiagnosis(repoPath, options.base);
     const format = options.format as 'console' | 'markdown' | 'json';
 
     if (options.githubSummary) {
       await writeGitHubSummary(diff, options.githubSummary);
+    }
+    if (options.githubAnnotations) {
+      await writeGitHubAnnotations(diff, options.githubAnnotations);
     }
 
     if (diff.contractMismatch) {
@@ -83,16 +88,28 @@ program
 program
   .command('trend')
   .argument('<path>', 'repository path')
-  .action(async (repoPath: string) => {
+  .option('--analyze', 'detect score degradation and contributing clusters')
+  .action(async (repoPath: string, options: { analyze?: boolean }) => {
     const resolved = path.resolve(repoPath);
     const snapshot = await createRepositorySnapshot(resolved);
-    const trendPath = path.join(resolved, snapshot.config.trendDir, 'history.jsonl');
-    try {
-      const raw = await readFile(trendPath, 'utf8');
-      process.stdout.write(raw);
-    } catch {
-      process.stdout.write('');
+    const trendPath = trendPathFor(resolved, snapshot.config.trendDir);
+    const entries = await loadTrendHistory(trendPath);
+    if (!options.analyze) {
+      process.stdout.write(`${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+      return;
     }
+    process.stdout.write(`${JSON.stringify(analyzeTrend(entries), null, 2)}\n`);
+  });
+
+program
+  .command('priorities')
+  .argument('<path>', 'repository path')
+  .description('improvement investment priority view')
+  .action(async (repoPath: string) => {
+    const snapshot = await createRepositorySnapshot(repoPath);
+    const report = await runDiagnosis(snapshot);
+    const priorities = rankInvestmentPriorities(report);
+    process.stdout.write(`${JSON.stringify(priorities, null, 2)}\n`);
   });
 
 program

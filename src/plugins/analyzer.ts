@@ -122,3 +122,26 @@ export class GoStubAnalyzerPlugin implements AnalyzerPlugin {
       }));
   }
 }
+
+export function getDefaultPlugins(): AnalyzerPlugin[] {
+  return [new TypeScriptAnalyzerPlugin(), new PythonStubAnalyzerPlugin(), new GoStubAnalyzerPlugin()];
+}
+
+export async function extractEvidenceWithPlugins(
+  snapshot: RepositorySnapshot,
+  plugins: AnalyzerPlugin[],
+): Promise<{ evidence: Evidence[]; analyzerIds: string[]; unsupportedSignals: string[] }> {
+  const evidenceById = new Map<string, Evidence>();
+  for (const plugin of plugins) {
+    const extracted = await plugin.extract(snapshot);
+    for (const item of extracted) {
+      evidenceById.set(item.evidenceId, item);
+    }
+  }
+  const negotiation = negotiateCapabilities(plugins);
+  return {
+    evidence: [...evidenceById.values()].sort((a, b) => a.evidenceId.localeCompare(b.evidenceId)),
+    analyzerIds: plugins.map((plugin) => plugin.id),
+    unsupportedSignals: negotiation.unsupported,
+  };
+}

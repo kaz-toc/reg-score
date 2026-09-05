@@ -16,5 +16,14 @@
       "forbiddenSignals": [],
       "minClusters": 1
     }
+  },
+  "fragile-cart-improved": {
+    "description": "循環依存を解消しテストを追加した改善版。fragile-cart より低リスクを期待。",
+    "expected": {
+      "maxScore": 40,
+      "requiredSignals": [],
+      "forbiddenSignals": ["dep-cycle"],
+      "minClusters": 0
+    }
   }
 }

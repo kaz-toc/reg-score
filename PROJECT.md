@@ -23,6 +23,8 @@ reg-score は、コードベースが将来の変更でデグレを起こしや�
 - `npm run test` — プロダクトテスト (vitest)
 - `npm run reg-score -- scan <path> --format markdown` — リポジトリ診断
 - `npm run reg-score -- diff <path> --base origin/main --format json` — 差分診断
+- `npm run reg-score -- priorities <path>` — 改善投資の優先順位
+- `npm run reg-score -- trend <path> --analyze` — スコア悪化の追跡
 - `npm run harness:test` — ガバナンスハーネスのテスト
 - `npm run harness:validate` — リポジトリポリシーの検証
 - `npm run harness:report` — read-only 構造レポート

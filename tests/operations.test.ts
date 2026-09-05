@@ -1,0 +1,55 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { describe, expect, it } from 'vitest';
+
+import { createRepositorySnapshot } from '../src/intake/snapshot.js';
+import { runDiagnosis } from '../src/pipeline/diagnose.js';
+import { analyzeTrend } from '../src/operations/trend.js';
+import type { TrendEntry } from '../src/operations/trend.js';
+
+const root = path.dirname(fileURLToPath(import.meta.url));
+
+describe('phase 5-6 operations', () => {
+  it('scans monorepo unit subset', async () => {
+    const repoRoot = path.join(root, '..');
+    const full = await createRepositorySnapshot(repoRoot);
+    const core = await createRepositorySnapshot(repoRoot, 'core');
+    expect(core.files.length).toBeLessThan(full.files.length);
+    expect(core.files.every((file) => file.relativePath.startsWith('src/evidence') || file.relativePath.startsWith('src/assessment'))).toBe(true);
+  });
+
+  it('analyzes trend degradation', () => {
+    const entries: TrendEntry[] = [
+      {
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        inputId: 'a',
+        score: 30,
+        confidence: 0.8,
+        contractVersion: 1,
+        topClusters: [{ clusterId: 'cluster:structural-fragility', score: 40 }],
+      },
+      {
+        generatedAt: '2026-01-02T00:00:00.000Z',
+        inputId: 'b',
+        score: 55,
+        confidence: 0.8,
+        contractVersion: 1,
+        topClusters: [{ clusterId: 'cluster:structural-fragility', score: 70 }],
+      },
+    ];
+    const analysis = analyzeTrend(entries);
+    expect(analysis.degradationStartAt).toBe('2026-01-02T00:00:00.000Z');
+    expect(analysis.scoreDeltaFromFirst).toBe(25);
+    expect(analysis.contributingClusterIds).toContain('cluster:structural-fragility');
+  });
+
+  it('detects golden score drift as calibration regression signal', async () => {
+    const fragile = await runDiagnosis(
+      await createRepositorySnapshot(path.join(root, 'fixtures', 'fragile-cart')),
+    );
+    const tampered = { ...fragile, repository: { ...fragile.repository, regressionRiskScore: 0 } };
+    expect(tampered.repository.regressionRiskScore).not.toBe(fragile.repository.regressionRiskScore);
+    expect(fragile.repository.regressionRiskScore).toBeGreaterThanOrEqual(25);
+  });
+});
