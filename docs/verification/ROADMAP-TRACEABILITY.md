@@ -9,7 +9,7 @@
 | Phase 2: intervention と before/after | `tests/intervention.test.ts` |
 | Phase 3: diff / blast radius / GitHub | `tests/diff.test.ts`, `.github/workflows/reg-score-advisory.yml` |
 | Phase 4: calibration / golden regression | `tests/calibration.test.ts`, `tests/redaction.test.ts` |
-| Phase 5: plugin capability negotiation | `tests/phases.test.ts`, `tests/operations.test.ts` |
+| Phase 5: plugin capability negotiation | `tests/phases.test.ts`, `tests/operations.test.ts`, `tests/integration.test.ts` |
 | Phase 6: trend / policy / retention | `tests/operations.test.ts`, `tests/redaction.test.ts` |
 | 成功条件 1: scan が capability を報告 | `tests/scan.test.ts`, `tests/phases.test.ts` |
 | 成功条件 2: diff が DiffReport を返す | `tests/diff.test.ts` |
@@ -19,5 +19,5 @@
 | 成功条件 6: 言語 capability negotiation | `tests/phases.test.ts` |
 | 成功条件 7: semantic 未評価 fallback | `tests/scan.test.ts` |
 | 成功条件 8: redaction / retention / gate | `tests/redaction.test.ts`, `tests/phases.test.ts` |
-| 成功条件 9: 全出力に根拠 | `tests/scan.test.ts` |
-| 成功条件 10: validate + 境界テスト | `npm run validate`, `docs/verification/BOUNDARY-MATRIX.md` |
+| 成功条件 9: 全出力に根拠 | `tests/scan.test.ts`, `tests/integration.test.ts` |
+| 成功条件 10: validate + 境界テスト | `npm run validate`, `tests/integration.test.ts`, `docs/verification/BOUNDARY-MATRIX.md` |
