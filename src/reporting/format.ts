@@ -18,9 +18,6 @@ export function formatDiffJsonReport(diff: DiffReport): string {
 export function formatConsoleReport(report: DiagnosisReport): string {
   const lines: string[] = [];
   lines.push(`Regression Risk Score: ${report.repository.regressionRiskScore} (confidence ${report.repository.confidence})`);
-  if (report.repository.riskDelta !== undefined) {
-    lines.push(`Risk delta: ${report.repository.riskDelta >= 0 ? '+' : ''}${report.repository.riskDelta}`);
-  }
   lines.push(report.repository.disclaimer);
   lines.push('');
   lines.push('Capabilities:');
@@ -95,9 +92,6 @@ export function formatMarkdownReport(report: DiagnosisReport): string {
   lines.push(`|---|---|`);
   lines.push(`| Regression Risk Score | ${report.repository.regressionRiskScore} |`);
   lines.push(`| Confidence | ${report.repository.confidence} |`);
-  if (report.repository.riskDelta !== undefined) {
-    lines.push(`| Risk Delta | ${report.repository.riskDelta} |`);
-  }
   lines.push('');
   lines.push(`> ${report.repository.disclaimer}`);
   lines.push('');

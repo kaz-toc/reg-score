@@ -23,6 +23,12 @@ export type BaselineSelection = {
   reason?: string;
 };
 
+type BaselineCandidate = {
+  fileName: string;
+  path: string;
+  value: Record<string, unknown>;
+};
+
 function isMissing(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
 }
@@ -97,9 +103,7 @@ export async function loadBaseline(
   }
 
   const candidateNames = (await readdir(baselineDir)).filter((entry) => entry.endsWith('.json')).sort();
-  const diagnostics: string[] = [];
-  let best: { entry: BaselineEntry; path: string } | null = null;
-  let validEntries = 0;
+  const candidates: BaselineCandidate[] = [];
 
   for (const fileName of candidateNames) {
     const baselinePath = path.join(baselineDir, fileName);
@@ -120,52 +124,43 @@ export async function loadBaseline(
     if (!isRecord(parsed)) {
       throw new ConfigError(baselinePath, 'baseline entry must be a JSON object');
     }
-    if (parsed.schemaVersion !== BASELINE_SCHEMA_VERSION) {
-      diagnostics.push(
-        `baseline schema mismatch at ${fileName}: expected v${BASELINE_SCHEMA_VERSION}, found ${versionLabel(parsed.schemaVersion)}`,
-      );
-      continue;
-    }
-    if (parsed.assessmentContractVersion !== ASSESSMENT_CONTRACT_VERSION) {
-      diagnostics.push(
-        `assessment contract mismatch at ${fileName}: expected v${ASSESSMENT_CONTRACT_VERSION}, found ${versionLabel(parsed.assessmentContractVersion)}`,
-      );
-      continue;
-    }
-
-    const validation = baselineEntrySchema.safeParse(parsed);
-    if (!validation.success) {
-      throw new ConfigError(baselinePath, `baseline schema validation failed: ${validation.error.message}`);
-    }
-
-    validEntries += 1;
-    const entry = validation.data;
-    if (entry.sourceCommitSha !== resolvedBaseSha) {
-      continue;
-    }
-    if (
-      !best ||
-      entry.generatedAt.localeCompare(best.entry.generatedAt) > 0 ||
-      (entry.generatedAt === best.entry.generatedAt && entry.inputId.localeCompare(best.entry.inputId) > 0)
-    ) {
-      best = { entry, path: baselinePath };
-    }
+    candidates.push({ fileName, path: baselinePath, value: parsed });
   }
 
-  if (best) {
-    return best;
-  }
-  if (diagnostics.length > 0) {
-    return { entry: null, reason: diagnostics.join('; ') };
-  }
-  if (candidateNames.length === 0) {
+  if (candidates.length === 0) {
     return { entry: null, reason: 'no stored baseline manifest — score and signal comparison suppressed' };
   }
-  if (validEntries > 0) {
+
+  const matching = candidates
+    .filter((candidate) => candidate.value.sourceCommitSha === resolvedBaseSha)
+    .sort((left, right) => {
+      const leftGeneratedAt = typeof left.value.generatedAt === 'string' ? left.value.generatedAt : '';
+      const rightGeneratedAt = typeof right.value.generatedAt === 'string' ? right.value.generatedAt : '';
+      return rightGeneratedAt.localeCompare(leftGeneratedAt) || right.fileName.localeCompare(left.fileName);
+    });
+  const selected = matching[0];
+  if (!selected) {
     return {
       entry: null,
       reason: `baseline commit mismatch: no saved baseline for resolved base ${resolvedBaseSha}`,
     };
   }
-  return { entry: null, reason: 'no stored baseline manifest — score and signal comparison suppressed' };
+  if (selected.value.schemaVersion !== BASELINE_SCHEMA_VERSION) {
+    return {
+      entry: null,
+      reason: `baseline schema mismatch at ${selected.fileName}: expected v${BASELINE_SCHEMA_VERSION}, found ${versionLabel(selected.value.schemaVersion)}`,
+    };
+  }
+  if (selected.value.assessmentContractVersion !== ASSESSMENT_CONTRACT_VERSION) {
+    return {
+      entry: null,
+      reason: `assessment contract mismatch at ${selected.fileName}: expected v${ASSESSMENT_CONTRACT_VERSION}, found ${versionLabel(selected.value.assessmentContractVersion)}`,
+    };
+  }
+
+  const validation = baselineEntrySchema.safeParse(selected.value);
+  if (!validation.success) {
+    throw new ConfigError(selected.path, `baseline schema validation failed: ${validation.error.message}`);
+  }
+  return { entry: validation.data, path: selected.path };
 }

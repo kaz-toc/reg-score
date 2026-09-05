@@ -2,8 +2,12 @@ import { createHash } from 'node:crypto';
 
 import type { DiffReport, DiagnosisReport, EvidenceChange, BlastRadiusEntry } from '../schema/report.v1.js';
 
+function normalizeRedactionPaths(redactPaths: string[]): string[] {
+  return [...new Set(redactPaths)].sort();
+}
+
 export function redactionPolicyFingerprint(redactPaths: string[]): string {
-  const normalized = [...new Set(redactPaths)].sort();
+  const normalized = normalizeRedactionPaths(redactPaths);
   return createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
 }
 
@@ -60,7 +64,8 @@ function redactBlastRadiusEntry(entry: BlastRadiusEntry, redactPaths: string[]):
 }
 
 export function redactReport(report: DiagnosisReport, redactPaths: string[]): DiagnosisReport {
-  if (redactPaths.length === 0) {
+  const normalized = normalizeRedactionPaths(redactPaths);
+  if (normalized.length === 0) {
     return report;
   }
 
@@ -68,63 +73,65 @@ export function redactReport(report: DiagnosisReport, redactPaths: string[]): Di
     ...report,
     metadata: {
       ...report.metadata,
-      repositoryPath: redactString(report.metadata.repositoryPath, redactPaths),
-      inputId: redactString(report.metadata.inputId, redactPaths),
-      unevaluatedAreas: report.metadata.unevaluatedAreas.map((area) => redactString(area, redactPaths)),
+      repositoryPath: redactString(report.metadata.repositoryPath, normalized),
+      inputId: redactString(report.metadata.inputId, normalized),
+      unevaluatedAreas: report.metadata.unevaluatedAreas.map((area) => redactString(area, normalized)),
     },
     clusters: report.clusters.map((cluster) => ({
       ...cluster,
-      clusterId: redactString(cluster.clusterId, redactPaths),
-      paths: cluster.paths.map((p) => redactString(p, redactPaths)),
-      triggerChanges: cluster.triggerChanges.map((t) => redactString(t, redactPaths)),
-      evidenceIds: cluster.evidenceIds.map((id) => redactString(id, redactPaths)),
+      clusterId: redactString(cluster.clusterId, normalized),
+      paths: cluster.paths.map((p) => redactString(p, normalized)),
+      triggerChanges: cluster.triggerChanges.map((t) => redactString(t, normalized)),
+      evidenceIds: cluster.evidenceIds.map((id) => redactString(id, normalized)),
     })),
     evidence: report.evidence.map((item) => ({
       ...item,
-      evidenceId: redactString(item.evidenceId, redactPaths),
-      path: redactOptionalString(item.path, redactPaths),
-      message: redactString(item.message, redactPaths),
-      metrics: redactMetrics(item.metrics, redactPaths),
+      evidenceId: redactString(item.evidenceId, normalized),
+      path: redactOptionalString(item.path, normalized),
+      message: redactString(item.message, normalized),
+      metrics: redactMetrics(item.metrics, normalized),
     })),
     semanticFindings: report.semanticFindings.map((finding) => ({
       ...finding,
-      findingId: redactString(finding.findingId, redactPaths),
-      path: redactOptionalString(finding.path, redactPaths),
-      summary: redactString(finding.summary, redactPaths),
-      relatedEvidenceIds: finding.relatedEvidenceIds.map((id) => redactString(id, redactPaths)),
+      findingId: redactString(finding.findingId, normalized),
+      path: redactOptionalString(finding.path, normalized),
+      summary: redactString(finding.summary, normalized),
+      relatedEvidenceIds: finding.relatedEvidenceIds.map((id) => redactString(id, normalized)),
     })),
     interventions: report.interventions.map((item) => ({
       ...item,
-      interventionId: redactString(item.interventionId, redactPaths),
-      targetPaths: item.targetPaths.map((p) => redactString(p, redactPaths)),
-      description: redactString(item.description, redactPaths),
-      verification: redactString(item.verification, redactPaths),
-      linkedClusterIds: item.linkedClusterIds.map((id) => redactString(id, redactPaths)),
+      interventionId: redactString(item.interventionId, normalized),
+      targetPaths: item.targetPaths.map((p) => redactString(p, normalized)),
+      description: redactString(item.description, normalized),
+      verification: redactString(item.verification, normalized),
+      linkedClusterIds: item.linkedClusterIds.map((id) => redactString(id, normalized)),
     })),
   };
 }
 
 export function redactDiffReport(diff: DiffReport, redactPaths: string[]): DiffReport {
-  if (redactPaths.length === 0) {
+  const normalized = normalizeRedactionPaths(redactPaths);
+  if (normalized.length === 0) {
     return diff;
   }
 
   return {
     ...diff,
-    current: redactReport(diff.current, redactPaths),
-    base: diff.base ? redactReport(diff.base, redactPaths) : undefined,
+    current: redactReport(diff.current, normalized),
+    base: diff.base ? redactReport(diff.base, normalized) : undefined,
     comparison: {
       ...diff.comparison,
-      reason: redactOptionalString(diff.comparison.reason, redactPaths),
-      changedFiles: diff.comparison.changedFiles.map((file) => redactString(file, redactPaths)),
-      blastRadius: diff.comparison.blastRadius.map((entry) => redactBlastRadiusEntry(entry, redactPaths)),
-      newSignals: diff.comparison.newSignals.map((change) => redactEvidenceChange(change, redactPaths)),
-      worsenedSignals: diff.comparison.worsenedSignals.map((change) => redactEvidenceChange(change, redactPaths)),
-      improvedSignals: diff.comparison.improvedSignals.map((change) => redactEvidenceChange(change, redactPaths)),
+      reason: redactOptionalString(diff.comparison.reason, normalized),
+      changedFiles: diff.comparison.changedFiles.map((file) => redactString(file, normalized)),
+      blastRadius: diff.comparison.blastRadius.map((entry) => redactBlastRadiusEntry(entry, normalized)),
+      newSignals: diff.comparison.newSignals.map((change) => redactEvidenceChange(change, normalized)),
+      worsenedSignals: diff.comparison.worsenedSignals.map((change) => redactEvidenceChange(change, normalized)),
+      improvedSignals: diff.comparison.improvedSignals.map((change) => redactEvidenceChange(change, normalized)),
     },
   };
 }
 
 export function redactStringList(values: string[], redactPaths: string[]): string[] {
-  return values.map((value) => redactString(value, redactPaths));
+  const normalized = normalizeRedactionPaths(redactPaths);
+  return values.map((value) => redactString(value, normalized));
 }

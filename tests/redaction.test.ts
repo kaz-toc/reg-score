@@ -26,6 +26,14 @@ describe('policy redaction and gate eligibility', () => {
       .not.toBe(redactionPolicyFingerprint(['secret/b']));
   });
 
+  it('applies overlapping redaction paths in the same canonical order used by the fingerprint', async () => {
+    const snapshot = await createRepositorySnapshot(path.join(root, 'fixtures', 'stable-cart'));
+    const report = await runDiagnosis(snapshot);
+
+    expect(redactReport(report, ['stable', 'stable-cart']))
+      .toEqual(redactReport(report, ['stable-cart', 'stable', 'stable-cart']));
+  });
+
   it('derives gate eligibility from observable calibration metrics', () => {
     expect(
       deriveGateEligible({

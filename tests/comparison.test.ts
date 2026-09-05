@@ -13,6 +13,7 @@ import { runDiagnosis } from '../src/pipeline/diagnose.js';
 import { baselineEntrySchema } from '../src/schema/report.v1.js';
 import type { BaselineEntry, DiagnosisReport } from '../src/schema/report.v1.js';
 import { ConfigError } from '../src/shared/errors.js';
+import { redactionPolicyFingerprint } from '../src/shared/redaction.js';
 import { createGitRepository } from './helpers/git-repository.js';
 
 const execFileAsync = promisify(execFile);
@@ -164,6 +165,108 @@ describe('commit-bound baseline comparison', () => {
     }
   });
 
+  it('keeps reordered overlapping redaction policies compatible without false signal changes', async () => {
+    const repo = await createGitRepository({
+      'secret-repo/a.ts': 'export const untested = 1;\n',
+    });
+    try {
+      await mkdir(path.join(repo.path, '.reg-score'), { recursive: true });
+      const policyPath = path.join(repo.path, '.reg-score', 'policy.json');
+      await writeFile(
+        policyPath,
+        JSON.stringify({ schemaVersion: 1, redactPaths: ['secret', 'secret-repo'] }),
+      );
+      const snapshot = await createRepositorySnapshot(repo.path);
+      await saveBaseline(snapshot, await runDiagnosis(snapshot));
+      await writeFile(
+        policyPath,
+        JSON.stringify({ schemaVersion: 1, redactPaths: ['secret-repo', 'secret', 'secret-repo'] }),
+      );
+
+      const diff = await runDiffDiagnosis(repo.path, repo.headSha);
+
+      expect(diff.comparison.compatible).toBe(true);
+      expect(diff.comparison.newSignals).toEqual([]);
+      expect(diff.comparison.worsenedSignals).toEqual([]);
+      expect(diff.comparison.improvedSignals).toEqual([]);
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it('does not fall back to an older compatible baseline when the newest same-commit entry is incompatible', async () => {
+    const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
+    try {
+      const snapshot = await createRepositorySnapshot(repo.path);
+      const report = await runDiagnosis(snapshot);
+      const baselineDir = path.join(repo.path, '.reg-score', 'baselines');
+      await mkdir(baselineDir, { recursive: true });
+      await writeFile(
+        path.join(baselineDir, 'older-compatible.json'),
+        JSON.stringify({
+          schemaVersion: 2,
+          inputId: 'older-compatible',
+          generatedAt: '2026-01-01T00:00:00.000Z',
+          assessmentContractVersion: 2,
+          sourceCommitSha: repo.baseSha,
+          redactionPolicyFingerprint: redactionPolicyFingerprint([]),
+          report,
+        }),
+      );
+      await writeFile(
+        path.join(baselineDir, 'newer-incompatible.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          inputId: 'newer-incompatible',
+          generatedAt: '2026-01-02T00:00:00.000Z',
+          assessmentContractVersion: 2,
+          sourceCommitSha: repo.baseSha,
+          redactionPolicyFingerprint: redactionPolicyFingerprint([]),
+          report,
+        }),
+      );
+
+      const diff = await runDiffDiagnosis(repo.path, repo.baseSha);
+
+      expect(diff.comparison.compatible).toBe(false);
+      expect(diff.comparison.reason).toContain('baseline schema mismatch');
+      expect(diff.base).toBeUndefined();
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it('does not report schema diagnostics from incompatible entries saved for another commit', async () => {
+    const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
+    try {
+      const snapshot = await createRepositorySnapshot(repo.path);
+      const report = await runDiagnosis(snapshot);
+      const baselineDir = path.join(repo.path, '.reg-score', 'baselines');
+      await mkdir(baselineDir, { recursive: true });
+      await writeFile(
+        path.join(baselineDir, 'unrelated-old.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          inputId: 'unrelated-old',
+          generatedAt: '2026-01-02T00:00:00.000Z',
+          assessmentContractVersion: 2,
+          sourceCommitSha: repo.headSha,
+          redactionPolicyFingerprint: redactionPolicyFingerprint([]),
+          report,
+        }),
+      );
+
+      const diff = await runDiffDiagnosis(repo.path, repo.baseSha);
+
+      expect(diff.comparison.compatible).toBe(false);
+      expect(diff.comparison.reason).toContain('baseline commit mismatch');
+      expect(diff.comparison.reason).not.toContain('baseline schema mismatch');
+      expect(diff.base).toBeUndefined();
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
   it('reports a parseable old baseline schema as incompatible instead of absent', async () => {
     const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
     try {
@@ -178,6 +281,7 @@ describe('commit-bound baseline comparison', () => {
           inputId: report.metadata.inputId,
           generatedAt: report.metadata.generatedAt,
           assessmentContractVersion: report.metadata.assessmentContractVersion,
+          sourceCommitSha: repo.baseSha,
           report,
         }),
       );

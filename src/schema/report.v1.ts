@@ -111,8 +111,6 @@ export const repositoryAssessmentSchema = z
   .object({
     regressionRiskScore: z.number().min(0).max(100),
     confidence: z.number().min(0).max(1),
-    riskDelta: z.number().optional(),
-    baselineId: z.string().optional(),
     disclaimer: z.string(),
   })
   .strict();

@@ -274,9 +274,6 @@ export type AssessmentInput = {
   successfulAnalyzers: number;
   semanticResolution: SemanticProviderResolution;
   llmProvider?: string;
-  baselineScore?: number;
-  baselineId?: string;
-  contractMismatch?: boolean;
 };
 
 export function assessRisk(input: AssessmentInput): DiagnosisReport {
@@ -366,12 +363,6 @@ export function assessRisk(input: AssessmentInput): DiagnosisReport {
     repository: {
       regressionRiskScore: repositoryScore,
       confidence,
-      riskDelta: input.contractMismatch
-        ? undefined
-        : input.baselineScore !== undefined
-          ? repositoryScore - input.baselineScore
-          : undefined,
-      baselineId: input.baselineId,
       disclaimer: SCORE_DISCLAIMER,
     },
     axes,

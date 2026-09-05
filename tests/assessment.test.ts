@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { assessRisk } from '../src/assessment/risk.js';
+import { formatConsoleReport, formatMarkdownReport } from '../src/reporting/format.js';
 import { diagnosisReportSchema } from '../src/schema/report.v1.js';
 import type { Evidence } from '../src/schema/report.v1.js';
 
@@ -15,6 +16,50 @@ const baseSnapshot = {
 } as const;
 
 describe('assessment contract', () => {
+  it('does not derive or expose comparison values from legacy assessment inputs', () => {
+    const report = assessRisk({
+      snapshot: baseSnapshot as never,
+      evidence: [],
+      semanticFindings: [],
+      capabilities: [],
+      analyzers: ['typescript-javascript-v1'],
+      selectedAnalyzers: 1,
+      successfulAnalyzers: 1,
+      semanticResolution: { status: 'unavailable', reason: 'LLM not configured' },
+      baselineScore: 5,
+      baselineId: 'legacy-baseline',
+      contractMismatch: false,
+    } as unknown as Parameters<typeof assessRisk>[0]);
+
+    expect(report.repository).not.toHaveProperty('riskDelta');
+    expect(report.repository).not.toHaveProperty('baselineId');
+    expect(formatConsoleReport(report)).not.toContain('Risk delta:');
+    expect(formatMarkdownReport(report)).not.toContain('| Risk Delta |');
+  });
+
+  it('rejects legacy comparison values in a diagnosis report', () => {
+    const report = assessRisk({
+      snapshot: baseSnapshot as never,
+      evidence: [],
+      semanticFindings: [],
+      capabilities: [],
+      analyzers: ['typescript-javascript-v1'],
+      selectedAnalyzers: 1,
+      successfulAnalyzers: 1,
+      semanticResolution: { status: 'unavailable', reason: 'LLM not configured' },
+    });
+    const legacyReport = {
+      ...report,
+      repository: {
+        ...report.repository,
+        riskDelta: 5,
+        baselineId: 'legacy-baseline',
+      },
+    };
+
+    expect(diagnosisReportSchema.safeParse(legacyReport).success).toBe(false);
+  });
+
   it('does not dilute high severity when low severity duplicates are added', () => {
     const highOnly: Evidence[] = [{
       evidenceId: 'evidence:dep-cycle:src/a.ts',
