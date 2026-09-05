@@ -4,6 +4,7 @@ import { assessRisk } from '../src/assessment/risk.js';
 import { formatConsoleReport, formatMarkdownReport } from '../src/reporting/format.js';
 import { diagnosisReportSchema } from '../src/schema/report.v1.js';
 import type { Evidence } from '../src/schema/report.v1.js';
+import { TypeScriptAnalyzerPlugin, negotiateCapabilities } from '../src/plugins/analyzer.js';
 
 const baseSnapshot = {
   repositoryPath: '/tmp/repo',
@@ -106,6 +107,30 @@ describe('assessment contract', () => {
     }).repository.regressionRiskScore;
 
     expect(combinedScore).toBe(highScore);
+  });
+
+  it('marks change volatility unevaluated when Git-backed signals are unavailable', () => {
+    const nonGitSnapshot = { ...baseSnapshot, gitAvailable: false };
+    const capabilities = negotiateCapabilities(
+      {
+        ...nonGitSnapshot,
+        files: [{ relativePath: 'src/a.ts', absolutePath: '/tmp/repo/src/a.ts', extension: '.ts', content: '', contentHash: 'a', nonBlankLines: 1 }],
+      } as never,
+      [new TypeScriptAnalyzerPlugin()],
+    ).capabilities;
+
+    const report = assessRisk({
+      snapshot: nonGitSnapshot as never,
+      evidence: [],
+      semanticFindings: [],
+      capabilities,
+      analyzers: ['typescript-javascript-v1'],
+      selectedAnalyzers: 1,
+      successfulAnalyzers: 1,
+      semanticResolution: { status: 'unavailable', reason: 'LLM not configured' },
+    });
+
+    expect(report.axes.find((axis) => axis.axisId === 'change-volatility')?.unevaluated).toBe(true);
   });
 
   it('clusters by mechanism rather than axis only', () => {

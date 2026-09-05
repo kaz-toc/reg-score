@@ -12,6 +12,7 @@ import {
 import { loadCalibration } from '../src/calibration/dataset.js';
 import { evaluatePolicy, policySchema } from '../src/operations/policy.js';
 import type { RepositorySnapshot } from '../src/intake/snapshot.js';
+import { DefaultSemanticProviderFactory, runSemanticAnalysis } from '../src/semantic/provider.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 
@@ -35,12 +36,54 @@ const emptySnapshot: RepositorySnapshot = {
 };
 
 describe('phase 4-6 capabilities', () => {
-  it('negotiates plugin capabilities without zeroing unsupported signals', () => {
+  it('marks git churn unevaluated when a TypeScript snapshot has no Git history', () => {
     const plugins = [new TypeScriptAnalyzerPlugin(), new PythonStubAnalyzerPlugin(), new GoStubAnalyzerPlugin()];
     const negotiation = negotiateCapabilities(emptySnapshot, plugins);
     expect(negotiation.supported).toContain('dep-cycle');
-    expect(negotiation.unevaluated).toEqual([]);
-    expect(negotiation.capabilities.some((entry) => entry.language === 'typescript-javascript')).toBe(true);
+    expect(negotiation.unevaluated).toContain('git-churn');
+    expect(negotiation.capabilities[0]?.supportedSignals).not.toContain('git-churn');
+    expect(negotiation.capabilities[0]?.unevaluatedSignals).toContain('git-churn');
+  });
+
+  it('reports a configured but uninjected semantic provider as unavailable', () => {
+    expect(
+      new DefaultSemanticProviderFactory().create({ enabled: true, provider: 'openai', maxFiles: 1, sendScope: 'all' }),
+    ).toEqual({ status: 'unavailable', reason: 'LLM provider not implemented: openai' });
+  });
+
+  it('returns findings from the actual provider supplied by an injected semantic factory', async () => {
+    const provider = {
+      name: 'injected',
+      analyze: async () => [
+        {
+          axisId: 'semantic-ambiguity' as const,
+          path: 'src/a.ts',
+          summary: 'Injected provider finding',
+          relatedEvidenceIds: [],
+          confidence: 0.8,
+        },
+      ],
+    };
+    const result = await runSemanticAnalysis(
+      {
+        ...emptySnapshot,
+        config: { schemaVersion: 1, llm: { enabled: true, provider: 'openai', maxFiles: 1, sendScope: 'all' } } as never,
+      },
+      [],
+      { create: () => ({ status: 'available', provider }) },
+    );
+
+    expect(result.resolution).toEqual({ status: 'available', provider });
+    expect(result.findings).toEqual([
+      {
+        findingId: 'finding:semantic:1',
+        axisId: 'semantic-ambiguity',
+        path: 'src/a.ts',
+        summary: 'Injected provider finding',
+        relatedEvidenceIds: [],
+        confidence: 0.8,
+      },
+    ]);
   });
 
   it('loads calibration dataset with gate conditions', async () => {

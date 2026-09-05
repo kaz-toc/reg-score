@@ -19,7 +19,7 @@ import {
 } from '../schema/report.v1.js';
 import type { RepositorySnapshot } from '../intake/snapshot.js';
 import type { SemanticProviderResolution } from '../semantic/provider.js';
-import { axisHasSupportedSignals } from '../plugins/analyzer.js';
+import { axisHasSupportedSignals } from './capability.js';
 
 const AXIS_NAMES: Record<RiskAxisId, string> = {
   'structural-fragility': 'Structural Fragility',

@@ -1,5 +1,5 @@
-import type { CapabilityResult, Evidence, RiskAxisId, SignalId, SourceLanguage } from '../schema/report.v1.js';
-import { ALL_SIGNAL_IDS, ASSESSMENT_CONTRACT_VERSION, SIGNAL_AXIS } from '../schema/report.v1.js';
+import type { CapabilityResult, Evidence, SignalId, SourceLanguage } from '../schema/report.v1.js';
+import { ALL_SIGNAL_IDS, ASSESSMENT_CONTRACT_VERSION } from '../schema/report.v1.js';
 import type { RepositorySnapshot, SourceFile } from '../intake/snapshot.js';
 import { IntakeError } from '../shared/errors.js';
 
@@ -107,7 +107,7 @@ export function negotiateCapabilities(
       continue;
     }
 
-    const supportedSignals = [...capability.signals];
+    const supportedSignals = capability.signals.filter((signal) => snapshot.gitAvailable || signal !== 'git-churn');
     const unevaluatedSignals = ALL_SIGNAL_IDS.filter((signal) => !supportedSignals.includes(signal));
     capabilities.push({
       language,
@@ -180,13 +180,6 @@ export class GoStubAnalyzerPlugin implements AnalyzerPlugin {
 
 export function getDefaultPlugins(): AnalyzerPlugin[] {
   return [new TypeScriptAnalyzerPlugin(), new PythonStubAnalyzerPlugin(), new GoStubAnalyzerPlugin()];
-}
-
-export function axisHasSupportedSignals(axisId: RiskAxisId, capabilities: CapabilityResult[]): boolean {
-  const axisSignals = (Object.entries(SIGNAL_AXIS) as Array<[SignalId, typeof axisId]>)
-    .filter(([, mappedAxis]) => mappedAxis === axisId)
-    .map(([signal]) => signal);
-  return capabilities.some((capability) => axisSignals.some((signal) => capability.supportedSignals.includes(signal)));
 }
 
 export async function extractEvidenceWithPlugins(

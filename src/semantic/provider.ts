@@ -19,12 +19,6 @@ export type SemanticProviderFactory = {
   create(config: LlmConfig): SemanticProviderResolution;
 };
 
-const REGISTERED_PROVIDERS = new Set<string>();
-
-export function registerSemanticProvider(name: string): void {
-  REGISTERED_PROVIDERS.add(name);
-}
-
 const providerOutputSchema = z.array(
   z
     .object({
@@ -54,18 +48,7 @@ export class DefaultSemanticProviderFactory implements SemanticProviderFactory {
     if (config.provider === 'none') {
       return { status: 'unavailable', reason: 'LLM provider not set' };
     }
-    if (!REGISTERED_PROVIDERS.has(config.provider)) {
-      return { status: 'unavailable', reason: `LLM provider not implemented: ${config.provider}` };
-    }
-    return {
-      status: 'available',
-      provider: {
-        name: config.provider,
-        async analyze(): Promise<SemanticFinding[]> {
-          return [];
-        },
-      },
-    };
+    return { status: 'unavailable', reason: `LLM provider not implemented: ${config.provider}` };
   }
 }
 

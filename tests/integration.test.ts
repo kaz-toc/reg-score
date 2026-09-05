@@ -45,6 +45,17 @@ describe('integration: semantic unevaluated', () => {
   });
 });
 
+describe('integration: Git-dependent capability unevaluated', () => {
+  it('marks change volatility unevaluated for a non-Git repository snapshot', async () => {
+    const snapshot = await createRepositorySnapshot(path.join(fixturesRoot, 'stable-cart'));
+    snapshot.gitAvailable = false;
+    const report = await runDiagnosis(snapshot);
+
+    expect(report.capabilities.find((entry) => entry.language === 'typescript-javascript')?.supportedSignals).not.toContain('git-churn');
+    expect(report.axes.find((axis) => axis.axisId === 'change-volatility')?.unevaluated).toBe(true);
+  });
+});
+
 describe('integration: output evidence traceability', () => {
   it('includes evidence details in console, markdown, and json outputs', async () => {
     const report = await runDiagnosis(await createRepositorySnapshot(path.join(fixturesRoot, 'fragile-cart')));
