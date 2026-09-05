@@ -7,6 +7,8 @@ import { configSchema, defaultConfig, normalizeConfig } from '../shared/config.j
 import { ConfigError, IntakeError } from '../shared/errors.js';
 import { ASSESSMENT_CONTRACT_VERSION } from '../schema/report.v1.js';
 import { getRegisteredExtensions } from '../plugins/analyzer.js';
+import { DefaultGitProvider } from '../adapters/git-provider.js';
+import { analysisContextFingerprint } from './analysis-context.js';
 
 export type SourceFile = {
   relativePath: string;
@@ -29,6 +31,10 @@ export type RepositorySnapshot = {
   inputId: string;
   files: SourceFile[];
   gitAvailable: boolean;
+  sourceCommitSha?: string;
+  gitDirty: boolean;
+  gitStatusFingerprint?: string;
+  analysisContextFingerprint: string;
   truncated: boolean;
   intakeIssues: IntakeIssue[];
   config: RegScoreConfig;
@@ -154,18 +160,6 @@ async function walkFiles(
   return false;
 }
 
-async function gitAvailable(repositoryPath: string): Promise<boolean> {
-  try {
-    const { execFile } = await import('node:child_process');
-    const { promisify } = await import('node:util');
-    const execFileAsync = promisify(execFile);
-    await execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: repositoryPath });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export function computeInputId(unitId: string | undefined, files: SourceFile[], config: RegScoreConfig): string {
   const hash = createHash('sha256');
   hash.update(String(ASSESSMENT_CONTRACT_VERSION));
@@ -216,6 +210,8 @@ export async function createRepositorySnapshot(repositoryPath: string, unitId?: 
   }
 
   const extensions = getRegisteredExtensions();
+  const gitProvider = new DefaultGitProvider();
+  const gitBefore = await gitProvider.inspectRepository(resolved);
   const roots = unit ? unit.roots.map((root) => resolveUnitRoot(resolved, root)) : [resolved];
   const files: SourceFile[] = [];
   const intakeIssues: IntakeIssue[] = [];
@@ -238,14 +234,32 @@ export async function createRepositorySnapshot(repositoryPath: string, unitId?: 
     a.relativePath.localeCompare(b.relativePath),
   );
 
-  const git = await gitAvailable(resolved);
+  const gitAfter = await gitProvider.inspectRepository(
+    resolved,
+    uniqueFiles.map((file) => file.relativePath),
+  );
+  if (
+    (gitBefore === undefined) !== (gitAfter === undefined) ||
+    (gitBefore && gitAfter && (
+      gitBefore.rootPath !== gitAfter.rootPath ||
+      gitBefore.headSha !== gitAfter.headSha ||
+      gitBefore.statusFingerprint !== gitAfter.statusFingerprint
+    ))
+  ) {
+    throw new IntakeError('Git repository state changed during repository intake');
+  }
+  const gitAvailable = gitAfter !== undefined;
 
   return {
     repositoryPath: resolved,
     unitId,
     inputId: computeInputId(unitId, uniqueFiles, config),
     files: uniqueFiles,
-    gitAvailable: git,
+    gitAvailable,
+    sourceCommitSha: gitAfter?.headSha,
+    gitDirty: gitAfter?.dirty ?? false,
+    gitStatusFingerprint: gitAfter?.statusFingerprint,
+    analysisContextFingerprint: analysisContextFingerprint(config, unitId, gitAvailable),
     truncated,
     intakeIssues,
     config,

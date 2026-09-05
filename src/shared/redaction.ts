@@ -1,9 +1,13 @@
 import { createHash } from 'node:crypto';
 
+import { diagnosisReportSchema, diffReportSchema } from '../schema/report.v1.js';
 import type { DiffReport, DiagnosisReport, EvidenceChange, BlastRadiusEntry } from '../schema/report.v1.js';
+import { RegScoreError } from './errors.js';
+
+const REDACTION_TOKEN_PATTERN = /\[REDACTED(?:-RAW)?:[a-f0-9]{64}\]/g;
 
 function normalizeRedactionPaths(redactPaths: string[]): string[] {
-  return [...new Set(redactPaths)].sort();
+  return [...new Set(redactPaths)].sort((left, right) => right.length - left.length || left.localeCompare(right));
 }
 
 export function redactionPolicyFingerprint(redactPaths: string[]): string {
@@ -11,15 +15,41 @@ export function redactionPolicyFingerprint(redactPaths: string[]): string {
   return createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
 }
 
-function redactString(value: string, redactPaths: string[]): string {
+function escapeRawRedactionTokens(value: string): string {
+  return value.replace(REDACTION_TOKEN_PATTERN, (token) => {
+    const pseudonym = createHash('sha256').update(`reg-score-redaction-raw-v1\0${token}`).digest('hex');
+    return `[REDACTED-RAW:${pseudonym}]`;
+  });
+}
+
+function redactString(value: string, redactPaths: string[], preserveTokens = false): string {
   if (redactPaths.length === 0) {
     return value;
   }
-  let result = value;
+  let result = preserveTokens ? value : escapeRawRedactionTokens(value);
   for (const pattern of redactPaths) {
-    result = result.split(pattern).join('[REDACTED]');
+    const pseudonym = createHash('sha256').update(`reg-score-redaction-v1\0${pattern}`).digest('hex');
+    const replacement = `[REDACTED:${pseudonym}]`;
+    let cursor = 0;
+    let protectedResult = '';
+    for (const match of result.matchAll(REDACTION_TOKEN_PATTERN)) {
+      const matchIndex = match.index ?? 0;
+      protectedResult += result.slice(cursor, matchIndex).split(pattern).join(replacement);
+      protectedResult += match[0];
+      cursor = matchIndex + match[0].length;
+    }
+    protectedResult += result.slice(cursor).split(pattern).join(replacement);
+    result = protectedResult;
   }
   return result;
+}
+
+function redactEntityId(value: string, namespace: string, redactPaths: string[]): string {
+  const prefix = `${namespace}:`;
+  if (!value.startsWith(prefix)) {
+    return redactString(value, redactPaths);
+  }
+  return `${prefix}${redactString(value.slice(prefix.length), redactPaths)}`;
 }
 
 function redactOptionalString(value: string | undefined, redactPaths: string[]): string | undefined {
@@ -43,9 +73,11 @@ function redactMetrics(
 function redactEvidenceChange(change: EvidenceChange, redactPaths: string[]): EvidenceChange {
   return {
     ...change,
-    evidenceId: redactString(change.evidenceId, redactPaths),
-    path: redactOptionalString(change.path, redactPaths),
-    message: redactString(change.message, redactPaths),
+    evidenceId: change.evidenceId.startsWith('evidence:')
+      ? `evidence:${redactString(change.evidenceId.slice('evidence:'.length), redactPaths, true)}`
+      : redactString(change.evidenceId, redactPaths, true),
+    path: change.path ? redactString(change.path, redactPaths, true) : change.path,
+    message: redactString(change.message, redactPaths, true),
   };
 }
 
@@ -65,48 +97,56 @@ function redactBlastRadiusEntry(entry: BlastRadiusEntry, redactPaths: string[]):
 
 export function redactReport(report: DiagnosisReport, redactPaths: string[]): DiagnosisReport {
   const normalized = normalizeRedactionPaths(redactPaths);
+  const fingerprint = redactionPolicyFingerprint(normalized);
+  if (report.metadata.redactionPolicyFingerprint) {
+    if (report.metadata.redactionPolicyFingerprint !== fingerprint) {
+      throw new RegScoreError('cannot apply a different redaction policy to an already-redacted report');
+    }
+    return diagnosisReportSchema.parse(report);
+  }
   if (normalized.length === 0) {
     return report;
   }
 
-  return {
+  const redacted = {
     ...report,
     metadata: {
       ...report.metadata,
       repositoryPath: redactString(report.metadata.repositoryPath, normalized),
-      inputId: redactString(report.metadata.inputId, normalized),
       unevaluatedAreas: report.metadata.unevaluatedAreas.map((area) => redactString(area, normalized)),
+      redactionPolicyFingerprint: fingerprint,
     },
     clusters: report.clusters.map((cluster) => ({
       ...cluster,
-      clusterId: redactString(cluster.clusterId, normalized),
+      clusterId: redactEntityId(cluster.clusterId, 'cluster', normalized),
       paths: cluster.paths.map((p) => redactString(p, normalized)),
       triggerChanges: cluster.triggerChanges.map((t) => redactString(t, normalized)),
-      evidenceIds: cluster.evidenceIds.map((id) => redactString(id, normalized)),
+      evidenceIds: cluster.evidenceIds.map((id) => redactEntityId(id, 'evidence', normalized)),
     })),
     evidence: report.evidence.map((item) => ({
       ...item,
-      evidenceId: redactString(item.evidenceId, normalized),
+      evidenceId: redactEntityId(item.evidenceId, 'evidence', normalized),
       path: redactOptionalString(item.path, normalized),
       message: redactString(item.message, normalized),
       metrics: redactMetrics(item.metrics, normalized),
     })),
     semanticFindings: report.semanticFindings.map((finding) => ({
       ...finding,
-      findingId: redactString(finding.findingId, normalized),
+      findingId: redactEntityId(finding.findingId, 'finding', normalized),
       path: redactOptionalString(finding.path, normalized),
       summary: redactString(finding.summary, normalized),
-      relatedEvidenceIds: finding.relatedEvidenceIds.map((id) => redactString(id, normalized)),
+      relatedEvidenceIds: finding.relatedEvidenceIds.map((id) => redactEntityId(id, 'evidence', normalized)),
     })),
     interventions: report.interventions.map((item) => ({
       ...item,
-      interventionId: redactString(item.interventionId, normalized),
+      interventionId: redactEntityId(item.interventionId, 'intervention', normalized),
       targetPaths: item.targetPaths.map((p) => redactString(p, normalized)),
       description: redactString(item.description, normalized),
       verification: redactString(item.verification, normalized),
-      linkedClusterIds: item.linkedClusterIds.map((id) => redactString(id, normalized)),
+      linkedClusterIds: item.linkedClusterIds.map((id) => redactEntityId(id, 'cluster', normalized)),
     })),
   };
+  return diagnosisReportSchema.parse(redacted);
 }
 
 export function redactDiffReport(diff: DiffReport, redactPaths: string[]): DiffReport {
@@ -115,7 +155,7 @@ export function redactDiffReport(diff: DiffReport, redactPaths: string[]): DiffR
     return diff;
   }
 
-  return {
+  const redacted = {
     ...diff,
     current: redactReport(diff.current, normalized),
     base: diff.base ? redactReport(diff.base, normalized) : undefined,
@@ -129,6 +169,7 @@ export function redactDiffReport(diff: DiffReport, redactPaths: string[]): DiffR
       improvedSignals: diff.comparison.improvedSignals.map((change) => redactEvidenceChange(change, normalized)),
     },
   };
+  return diffReportSchema.parse(redacted);
 }
 
 export function redactStringList(values: string[], redactPaths: string[]): string[] {

@@ -11,7 +11,7 @@ import { RegScoreError } from '../shared/errors.js';
 import { redactReport, redactStringList } from '../shared/redaction.js';
 import type { PersistenceResult } from './retention.js';
 import { retainTrendEntries } from './retention.js';
-import { resolveSafeStorageDir } from './storage-boundary.js';
+import { assertSafeStorageDir, resolveSafeStorageDir } from './storage-boundary.js';
 
 function isMissing(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
@@ -53,8 +53,8 @@ export async function appendTrend(snapshot: RepositorySnapshot, report: Diagnosi
   const policy = await loadPolicy(snapshot.repositoryPath, snapshot.config.policyFile);
   const cutoff = new Date(Date.now() - policy.retentionDays * 24 * 60 * 60 * 1000);
   const trendDir = await resolveSafeStorageDir(snapshot.repositoryPath, snapshot.config.trendDir, 'trendDir', true);
-  const trendPath = path.join(trendDir, 'history.jsonl');
-  const retention = [await retainTrendEntries(trendPath, cutoff)];
+  const trendPath = path.join(trendDir.path, 'history.jsonl');
+  const retention = [await retainTrendEntries(trendDir, cutoff)];
   const git = new DefaultGitProvider();
   const commitSha = snapshot.gitAvailable ? await git.resolveHeadCommit(snapshot.repositoryPath) : undefined;
   const previousEntry = (await loadTrendHistory(trendPath)).at(-1);
@@ -79,6 +79,6 @@ export async function appendTrend(snapshot: RepositorySnapshot, report: Diagnosi
     })),
   });
 
-  await atomicAppendLine(trendPath, JSON.stringify(entry));
+  await atomicAppendLine(trendPath, JSON.stringify(entry), () => assertSafeStorageDir(trendDir));
   return { path: trendPath, retention };
 }

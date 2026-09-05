@@ -45,6 +45,7 @@ export type PolicyEvaluation = {
   advisory: boolean;
   gateWouldFail: boolean;
   gateEligible: boolean;
+  missingCalibrationConditions: string[];
   reasons: string[];
 };
 
@@ -80,6 +81,7 @@ export function evaluatePolicy(
   confidence: number,
   policy: TeamPolicy,
   gateEligible: boolean,
+  missingCalibrationConditions: string[],
 ): PolicyEvaluation {
   const reasons: string[] = [];
   const advisory = score >= policy.advisoryThreshold;
@@ -99,5 +101,5 @@ export function evaluatePolicy(
     }
   }
 
-  return { advisory, gateWouldFail, gateEligible, reasons };
+  return { advisory, gateWouldFail, gateEligible, missingCalibrationConditions, reasons };
 }

@@ -1,9 +1,11 @@
 import { lstat, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 
-import { trendEntrySchema } from '../schema/report.v1.js';
+import { baselineEntrySchema, trendEntrySchema } from '../schema/report.v1.js';
 import { atomicWriteFile } from '../shared/atomic-write.js';
 import { ConfigError, RegScoreError } from '../shared/errors.js';
+import { assertSafeStorageDir } from './storage-boundary.js';
+import type { SafeStorageDirectory } from './storage-boundary.js';
 
 export type RetentionAudit = {
   storage: 'baseline' | 'trend';
@@ -16,14 +18,25 @@ export type PersistenceResult = {
   retention: RetentionAudit[];
 };
 
+export function baselineEntryFileName(entry: {
+  inputId: string;
+  sourceCommitSha?: string;
+}): string {
+  return `baseline-${entry.inputId}-${entry.sourceCommitSha ?? 'non-git'}.json`;
+}
+
 function isMissing(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
 }
 
-export async function retainBaselineEntries(directory: string, cutoff: Date): Promise<RetentionAudit> {
+export async function retainBaselineEntries(
+  directory: SafeStorageDirectory,
+  cutoff: Date,
+): Promise<RetentionAudit> {
   let entries: string[];
   try {
-    entries = await readdir(directory);
+    await assertSafeStorageDir(directory);
+    entries = await readdir(directory.path);
   } catch (error) {
     if (isMissing(error)) {
       return { storage: 'baseline', reason: 'expired', removedEntries: 0 };
@@ -33,21 +46,40 @@ export async function retainBaselineEntries(directory: string, cutoff: Date): Pr
 
   let removedEntries = 0;
   for (const entry of entries) {
-    if (!entry.endsWith('.json')) {
+    if (!entry.startsWith('baseline-') || !entry.endsWith('.json')) {
       continue;
     }
-    const entryPath = path.join(directory, entry);
+    await assertSafeStorageDir(directory);
+    const entryPath = path.join(directory.path, entry);
     const entryStat = await lstat(entryPath).catch(() => null);
-    if (entryStat?.isFile() && entryStat.mtimeMs < cutoff.getTime()) {
-      await rm(entryPath, { force: true });
-      removedEntries += 1;
+    if (!entryStat?.isFile() || entryStat.mtimeMs >= cutoff.getTime()) {
+      continue;
     }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await readFile(entryPath, 'utf8'));
+    } catch {
+      continue;
+    }
+    const validated = baselineEntrySchema.safeParse(parsed);
+    if (!validated.success || baselineEntryFileName(validated.data) !== entry) {
+      continue;
+    }
+    await assertSafeStorageDir(directory);
+    await rm(entryPath, { force: true });
+    await assertSafeStorageDir(directory);
+    removedEntries += 1;
   }
 
   return { storage: 'baseline', reason: 'expired', removedEntries };
 }
 
-export async function retainTrendEntries(historyPath: string, cutoff: Date): Promise<RetentionAudit> {
+export async function retainTrendEntries(
+  directory: SafeStorageDirectory,
+  cutoff: Date,
+): Promise<RetentionAudit> {
+  await assertSafeStorageDir(directory);
+  const historyPath = path.join(directory.path, 'history.jsonl');
   const historyStat = await lstat(historyPath).catch(() => null);
   if (!historyStat) {
     return { storage: 'trend', reason: 'expired', removedEntries: 0 };
@@ -78,7 +110,7 @@ export async function retainTrendEntries(historyPath: string, cutoff: Date): Pro
   const retained = entries.filter((entry) => entry.generatedAt >= cutoff.toISOString());
   if (retained.length !== entries.length) {
     const content = retained.length === 0 ? '' : `${retained.map((entry) => JSON.stringify(entry)).join('\n')}\n`;
-    await atomicWriteFile(historyPath, content);
+    await atomicWriteFile(historyPath, content, () => assertSafeStorageDir(directory));
   }
 
   return { storage: 'trend', reason: 'expired', removedEntries: entries.length - retained.length };

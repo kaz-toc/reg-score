@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const ASSESSMENT_CONTRACT_VERSION = 2;
 export const REPORT_SCHEMA_VERSION = 1;
-export const BASELINE_SCHEMA_VERSION = 2;
+export const BASELINE_SCHEMA_VERSION = 3;
 export const DIFF_SCHEMA_VERSION = 2;
 
 export const riskAxisIdSchema = z.enum([
@@ -139,6 +139,7 @@ export const reportMetadataSchema = z
     unevaluatedAreas: z.array(z.string()),
     semanticProviderStatus: z.enum(['available', 'unavailable', 'not-configured', 'failed']).optional(),
     semanticProviderReason: z.string().optional(),
+    redactionPolicyFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   })
   .strict();
 
@@ -155,10 +156,26 @@ export const diagnosisReportSchema = z
   })
   .strict()
   .superRefine((report, ctx) => {
-    const evidenceIds = new Set(report.evidence.map((item) => item.evidenceId));
-    const clusterIds = new Set(report.clusters.map((item) => item.clusterId));
-    const findingIds = new Set(report.semanticFindings.map((item) => item.findingId));
-    const interventionIds = new Set(report.interventions.map((item) => item.interventionId));
+    const evidenceIdList = report.evidence.map((item) => item.evidenceId);
+    const clusterIdList = report.clusters.map((item) => item.clusterId);
+    const findingIdList = report.semanticFindings.map((item) => item.findingId);
+    const interventionIdList = report.interventions.map((item) => item.interventionId);
+    const evidenceIds = new Set(evidenceIdList);
+    const clusterIds = new Set(clusterIdList);
+    const findingIds = new Set(findingIdList);
+    const interventionIds = new Set(interventionIdList);
+
+    const collections: Array<[string, string[], Set<string>]> = [
+      ['evidence', evidenceIdList, evidenceIds],
+      ['cluster', clusterIdList, clusterIds],
+      ['finding', findingIdList, findingIds],
+      ['intervention', interventionIdList, interventionIds],
+    ];
+    for (const [label, ids, uniqueIds] of collections) {
+      if (ids.length !== uniqueIds.size) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `duplicate ${label} entity IDs` });
+      }
+    }
 
     for (const finding of report.semanticFindings) {
       for (const evidenceId of finding.relatedEvidenceIds) {
@@ -246,19 +263,77 @@ export const diffReportSchema = z
     base: diagnosisReportSchema.optional(),
     comparison: diffComparisonSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((diff, ctx) => {
+    const baselineFieldsPresent =
+      diff.base !== undefined ||
+      diff.comparison.baselineId !== undefined ||
+      diff.comparison.riskDelta !== undefined;
+    if (diff.comparison.compatible) {
+      if (!diff.base || diff.comparison.baselineId === undefined || diff.comparison.riskDelta === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'compatible diff requires base, baselineId, and riskDelta',
+        });
+      } else {
+        if (diff.comparison.baselineId !== diff.base.metadata.inputId) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'baselineId must match base report inputId' });
+        }
+        const expectedDelta =
+          diff.current.repository.regressionRiskScore - diff.base.repository.regressionRiskScore;
+        if (diff.comparison.riskDelta !== expectedDelta) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'riskDelta must equal current score minus base score' });
+        }
+        if (diff.comparison.reason !== undefined) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'compatible diff forbids an incompatibility reason' });
+        }
+      }
+    } else if (baselineFieldsPresent) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'incompatible diff forbids base, baselineId, and riskDelta',
+      });
+    } else {
+      if (!diff.comparison.reason?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'incompatible diff requires a reason' });
+      }
+      if (
+        diff.comparison.newSignals.length > 0 ||
+        diff.comparison.worsenedSignals.length > 0 ||
+        diff.comparison.improvedSignals.length > 0
+      ) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'incompatible diff forbids signal changes' });
+      }
+    }
+  });
 
 export const baselineEntrySchema = z
   .object({
     schemaVersion: z.literal(BASELINE_SCHEMA_VERSION),
+    kind: z.literal('reg-score/baseline'),
     inputId: z.string(),
     generatedAt: z.string(),
     assessmentContractVersion: z.literal(ASSESSMENT_CONTRACT_VERSION),
     sourceCommitSha: z.string().optional(),
     redactionPolicyFingerprint: z.string(),
+    analysisContextFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
     report: diagnosisReportSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((entry, ctx) => {
+    if (entry.inputId !== entry.report.metadata.inputId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'baseline inputId must match report metadata' });
+    }
+    if (entry.generatedAt !== entry.report.metadata.generatedAt) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'baseline generatedAt must match report metadata' });
+    }
+    if (entry.assessmentContractVersion !== entry.report.metadata.assessmentContractVersion) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'baseline assessment contract must match report metadata',
+      });
+    }
+  });
 
 export const trendEntrySchema = z
   .object({

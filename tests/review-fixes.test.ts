@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import { computeBlastRadius } from '../src/commands/diff.js';
 import { runDiffDiagnosis } from '../src/commands/diff.js';
-import { diffReportSchema } from '../src/schema/report.v1.js';
+import { blastRadiusEntrySchema, diffReportSchema } from '../src/schema/report.v1.js';
 import { createRepositorySnapshot } from '../src/intake/snapshot.js';
 import { saveBaseline } from '../src/persistence/baseline-store.js';
 import { runDiagnosis } from '../src/pipeline/diagnose.js';
@@ -38,7 +38,7 @@ describe('review fixes', () => {
       { relativePath: 'src/b.ts' },
     ];
     const radius = computeBlastRadius(['src/a.ts'], '/repo', files);
-    expect(diffReportSchema.shape.comparison.shape.blastRadius.element.safeParse(radius[0]).success).toBe(true);
+    expect(blastRadiusEntrySchema.safeParse(radius[0]).success).toBe(true);
   });
 
   it('redacts diff comparison paths and signal identifiers', async () => {
@@ -84,6 +84,8 @@ describe('review fixes', () => {
       },
       comparison: {
         compatible: true,
+        riskDelta: 5,
+        baselineId: 'b',
         changedFiles: ['secret-repo/src/a.ts'],
         blastRadius: [{
           changedFile: 'secret-repo/src/a.ts',

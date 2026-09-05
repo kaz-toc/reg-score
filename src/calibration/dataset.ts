@@ -35,6 +35,10 @@ export const calibrationDatasetSchema = z
   .strict();
 
 export type CalibrationDataset = z.infer<typeof calibrationDatasetSchema>;
+export type CalibrationResult = CalibrationDataset & {
+  gateEligible: boolean;
+  missingRequiredConditions: string[];
+};
 
 const DEFAULT_GATE_CONDITIONS = [
   'calibration dataset with >= 30 samples per score band',
@@ -47,7 +51,7 @@ export async function loadCalibration(
   repositoryPath: string,
   goldenRegressionPassed: boolean,
   requiredConditions: string[],
-): Promise<CalibrationDataset & { gateEligible: boolean }> {
+): Promise<CalibrationResult> {
   const calibrationPath = path.join(repositoryPath, '.reg-score', 'calibration.json');
   try {
     await access(calibrationPath);
@@ -58,6 +62,7 @@ export async function loadCalibration(
       gateEligible: false,
       gateConditions: DEFAULT_GATE_CONDITIONS,
       satisfiedConditions: [],
+      missingRequiredConditions: [...requiredConditions],
     };
   }
 
@@ -69,6 +74,9 @@ export async function loadCalibration(
     const hasMissRate = dataset.records.some((record) => record.missRate !== undefined);
     const hasRankingQuality = dataset.records.some((record) => record.rankingQuality !== undefined);
     const hasExplanationUsefulness = dataset.records.some((record) => record.explanationUsefulness !== undefined);
+    const missingRequiredConditions = requiredConditions.filter(
+      (condition) => !dataset.satisfiedConditions.includes(condition),
+    );
 
     const gateEligible = deriveGateEligible(
       {
@@ -84,21 +92,27 @@ export async function loadCalibration(
       dataset.satisfiedConditions,
     );
 
-    return { ...dataset, gateEligible };
+    return { ...dataset, gateEligible, missingRequiredConditions };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new ConfigError(calibrationPath, reason);
   }
 }
 
-export function summarizeCalibration(dataset: CalibrationDataset & { gateEligible: boolean }): string {
+export function summarizeCalibration(dataset: CalibrationResult): string {
   const lines = ['Calibration summary:', `Gate eligible (derived): ${dataset.gateEligible}`];
   for (const record of dataset.records) {
     lines.push(
       `- band ${record.scoreBand}: n=${record.sampleCount}, regressions=${record.observedRegressions}, reverts=${record.observedReverts}, fp=${record.falsePositiveRate ?? 'n/a'}, miss=${record.missRate ?? 'n/a'}, rank=${record.rankingQuality ?? 'n/a'}, explain=${record.explanationUsefulness ?? 'n/a'}`,
     );
   }
-  if (!dataset.gateEligible) {
+  if (dataset.missingRequiredConditions.length > 0) {
+    lines.push('Missing required conditions:');
+    for (const condition of dataset.missingRequiredConditions) {
+      lines.push(`  - ${condition}`);
+    }
+  }
+  if (!dataset.gateEligible && dataset.gateConditions.length > 0) {
     lines.push('Gate conditions not met:');
     for (const condition of dataset.gateConditions) {
       lines.push(`  - ${condition}`);

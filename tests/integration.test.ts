@@ -22,6 +22,7 @@ import {
 } from '../src/reporting/format.js';
 import { baselineEntrySchema } from '../src/schema/report.v1.js';
 import { createGitRepository } from './helpers/git-repository.js';
+import type { AnalyzerPlugin } from '../src/plugins/analyzer.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const fixturesRoot = path.join(root, 'fixtures');
@@ -48,6 +49,50 @@ describe('integration: semantic unevaluated', () => {
   });
 });
 
+describe('integration: semantic provider injection', () => {
+  it('routes an injected semantic provider through runDiagnosis', async () => {
+    const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-semantic-pipeline-'));
+    try {
+      await mkdir(path.join(repositoryPath, 'src'), { recursive: true });
+      await writeFile(path.join(repositoryPath, 'src', 'a.ts'), 'export const a = 1;\n');
+      await writeFile(path.join(repositoryPath, 'reg-score.config.json'), JSON.stringify({
+        schemaVersion: 1,
+        llm: { enabled: true, provider: 'injected', maxFiles: 1, sendScope: 'all' },
+      }));
+      const snapshot = await createRepositorySnapshot(repositoryPath);
+      let analyzed = false;
+
+      const report = await runDiagnosis(snapshot, {
+        semanticProviderFactory: {
+          create: () => ({
+            status: 'available' as const,
+            provider: {
+              name: 'injected',
+              analyze: async () => {
+                analyzed = true;
+                return [{
+                  findingId: 'finding:semantic:injected',
+                  axisId: 'semantic-ambiguity' as const,
+                  path: 'src/a.ts',
+                  summary: 'Injected provider reached the diagnosis pipeline',
+                  relatedEvidenceIds: [],
+                  confidence: 0.9,
+                }];
+              },
+            },
+          }),
+        },
+      });
+
+      expect(analyzed).toBe(true);
+      expect(report.metadata.semanticProviderStatus).toBe('available');
+      expect(report.semanticFindings.map((finding) => finding.findingId)).toContain('finding:semantic:injected');
+    } finally {
+      await rm(repositoryPath, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('integration: Git-dependent capability unevaluated', () => {
   it('marks change volatility unevaluated for a non-Git repository snapshot', async () => {
     const snapshot = await createRepositorySnapshot(path.join(fixturesRoot, 'stable-cart'));
@@ -56,6 +101,100 @@ describe('integration: Git-dependent capability unevaluated', () => {
 
     expect(report.capabilities.find((entry) => entry.language === 'typescript-javascript')?.supportedSignals).not.toContain('git-churn');
     expect(report.axes.find((axis) => axis.axisId === 'change-volatility')?.unevaluated).toBe(true);
+  });
+
+  it('does not import churn evidence from outside the analyzed unit scope', async () => {
+    const repo = await createGitRepository({
+      'reg-score.config.json': JSON.stringify({
+        schemaVersion: 1,
+        churnDays: 3650,
+        units: [{ id: 'app', roots: ['packages/app'] }],
+      }),
+      'packages/app/a.ts': 'export const a = 1;\n',
+      'packages/noisy/noisy.ts': 'export const noisy = 0;\n',
+    });
+    try {
+      for (let index = 1; index <= 6; index += 1) {
+        await repo.write('packages/noisy/noisy.ts', `export const noisy = ${index};\n`);
+        await repo.commit(`change unrelated file ${index}`);
+      }
+
+      const snapshot = await createRepositorySnapshot(repo.path, 'app');
+      const report = await runDiagnosis(snapshot);
+
+      expect(snapshot.gitAvailable).toBe(true);
+      expect(report.evidence.filter((item) => item.signalId === 'git-churn')).toEqual([]);
+      expect(report.evidence.some((item) => item.path?.startsWith('packages/noisy/'))).toBe(false);
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it('keeps a stable fixture score independent of parent repository history', async () => {
+    const repo = await createGitRepository({
+      'fixtures/stable/src/a.ts': 'export const a = 1;\n',
+      'fixtures/stable/src/__tests__/a.test.ts': 'export const tested = true;\n',
+    });
+    const standalonePath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-standalone-fixture-'));
+    try {
+      const fixturePath = path.join(repo.path, 'fixtures', 'stable');
+      await mkdir(path.join(standalonePath, 'src', '__tests__'), { recursive: true });
+      await writeFile(path.join(standalonePath, 'src', 'a.ts'), 'export const a = 1;\n');
+      await writeFile(
+        path.join(standalonePath, 'src', '__tests__', 'a.test.ts'),
+        'export const tested = true;\n',
+      );
+      const nestedSnapshot = await createRepositorySnapshot(fixturePath);
+      const nestedReport = await runDiagnosis(nestedSnapshot);
+      const standaloneReport = await runDiagnosis(await createRepositorySnapshot(standalonePath));
+
+      expect(nestedSnapshot.gitAvailable).toBe(false);
+      expect(nestedReport.evidence.some((item) => item.signalId === 'git-churn')).toBe(false);
+      expect(nestedReport.repository.regressionRiskScore).toBe(standaloneReport.repository.regressionRiskScore);
+    } finally {
+      await rm(standalonePath, { recursive: true, force: true });
+      await repo.cleanup();
+    }
+  });
+
+  it('retains unsupported churn evidence for audit without recommending from it', async () => {
+    const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-capability-pipeline-'));
+    try {
+      await mkdir(path.join(repositoryPath, 'src'), { recursive: true });
+      await writeFile(path.join(repositoryPath, 'src', 'a.ts'), 'export const a = 1;\n');
+      const snapshot = await createRepositorySnapshot(repositoryPath);
+      const plugin: AnalyzerPlugin = {
+        id: 'unsupported-churn-test',
+        extensions: ['.ts'],
+        capabilities: [{
+          language: 'typescript-javascript',
+          contractVersion: 2,
+          signals: ['git-churn'],
+          completeness: 'partial',
+        }],
+        extract: async () => [{
+          evidenceId: 'evidence:git-churn:src/a.ts',
+          signalId: 'git-churn',
+          axisId: 'change-volatility',
+          path: 'src/a.ts',
+          severity: 'high',
+          message: 'unsupported churn evidence retained for audit',
+          source: 'deterministic',
+        }],
+      };
+
+      const report = await runDiagnosis(snapshot, { analyzerPlugins: [plugin] });
+
+      expect(report.evidence.map((item) => item.signalId)).toContain('git-churn');
+      expect(report.axes.find((axis) => axis.axisId === 'change-volatility')).toMatchObject({
+        unevaluated: true,
+        score: 0,
+      });
+      expect(report.clusters.some((cluster) => cluster.axisId === 'change-volatility')).toBe(false);
+      expect(report.interventions.some((item) => item.linkedSignalIds.includes('git-churn'))).toBe(false);
+    } finally {
+      await rm(repositoryPath, { recursive: true, force: true });
+    }
   });
 });
 
@@ -154,13 +293,11 @@ describe('integration: CLI retention audits', () => {
     const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
     try {
       const storageRoot = path.join(repo.path, '.reg-score');
-      const baselineDir = path.join(storageRoot, 'baselines');
       const trendDir = path.join(storageRoot, 'trends');
-      await mkdir(baselineDir, { recursive: true });
+      const snapshot = await createRepositorySnapshot(repo.path);
+      const seededBaseline = await saveBaseline(snapshot, await runDiagnosis(snapshot));
       await mkdir(trendDir, { recursive: true });
-      const expiredBaselinePath = path.join(baselineDir, 'expired.json');
-      await writeFile(expiredBaselinePath, '{}');
-      await utimes(expiredBaselinePath, new Date('2026-01-01T00:00:00.000Z'), new Date('2026-01-01T00:00:00.000Z'));
+      await utimes(seededBaseline.path, new Date('2026-01-01T00:00:00.000Z'), new Date('2026-01-01T00:00:00.000Z'));
       await writeFile(path.join(trendDir, 'history.jsonl'), `${JSON.stringify({
         schemaVersion: 1,
         generatedAt: '2026-01-01T00:00:00.000Z',
@@ -197,11 +334,9 @@ describe('integration: CLI retention audits', () => {
   it('formats the baseline save audit to stderr', async () => {
     const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
     try {
-      const baselineDir = path.join(repo.path, '.reg-score', 'baselines');
-      await mkdir(baselineDir, { recursive: true });
-      const expiredBaselinePath = path.join(baselineDir, 'expired.json');
-      await writeFile(expiredBaselinePath, '{}');
-      await utimes(expiredBaselinePath, new Date('2026-01-01T00:00:00.000Z'), new Date('2026-01-01T00:00:00.000Z'));
+      const snapshot = await createRepositorySnapshot(repo.path);
+      const seededBaseline = await saveBaseline(snapshot, await runDiagnosis(snapshot));
+      await utimes(seededBaseline.path, new Date('2026-01-01T00:00:00.000Z'), new Date('2026-01-01T00:00:00.000Z'));
 
       const cliPath = path.join(root, '..', 'src', 'cli.ts');
       const tsxPath = path.join(root, '..', 'node_modules', 'tsx', 'dist', 'cli.mjs');
@@ -216,6 +351,48 @@ describe('integration: CLI retention audits', () => {
       expect(stderr).toBe('retention storage=baseline reason=expired removed=1\n');
     } finally {
       await repo.cleanup();
+    }
+  });
+});
+
+describe('integration: CLI calibration conditions', () => {
+  it('displays missing custom conditions in calibration and policy output', async () => {
+    const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-calibration-cli-'));
+    try {
+      await mkdir(path.join(repositoryPath, '.reg-score'), { recursive: true });
+      await mkdir(path.join(repositoryPath, 'src'), { recursive: true });
+      await writeFile(path.join(repositoryPath, 'src', 'a.ts'), 'export const a = 1;\n');
+      await writeFile(path.join(repositoryPath, '.reg-score', 'policy.json'), JSON.stringify({
+        schemaVersion: 1,
+        gateEnabled: true,
+        requiredCalibrationConditions: ['security-reviewed'],
+      }));
+      await writeFile(path.join(repositoryPath, '.reg-score', 'calibration.json'), JSON.stringify({
+        schemaVersion: 1,
+        records: [{
+          schemaVersion: 1,
+          scoreBand: '0-100',
+          sampleCount: 30,
+          observedRegressions: 1,
+          observedReverts: 0,
+          falsePositiveRate: 0.1,
+          missRate: 0.1,
+          rankingQuality: 0.8,
+          explanationUsefulness: 0.8,
+        }],
+        gateConditions: [],
+        satisfiedConditions: [],
+      }));
+      const cliPath = path.join(root, '..', 'src', 'cli.ts');
+      const tsxPath = path.join(root, '..', 'node_modules', 'tsx', 'dist', 'cli.mjs');
+
+      const calibration = await execFileAsync(process.execPath, [tsxPath, cliPath, 'calibration', repositoryPath]);
+      const policy = await execFileAsync(process.execPath, [tsxPath, cliPath, 'policy', repositoryPath, '--evaluate']);
+
+      expect(calibration.stdout).toContain('Missing required conditions:\n  - security-reviewed');
+      expect(JSON.parse(policy.stdout).missingCalibrationConditions).toEqual(['security-reviewed']);
+    } finally {
+      await rm(repositoryPath, { recursive: true, force: true });
     }
   });
 });

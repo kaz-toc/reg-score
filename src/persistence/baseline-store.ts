@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { DefaultGitProvider } from '../adapters/git-provider.js';
 import type { RepositorySnapshot } from '../intake/snapshot.js';
+import { diagnosisContextFingerprint } from '../intake/analysis-context.js';
 import { loadPolicy } from '../operations/policy.js';
 import {
   ASSESSMENT_CONTRACT_VERSION,
@@ -14,8 +15,8 @@ import { atomicWriteFile } from '../shared/atomic-write.js';
 import { ConfigError } from '../shared/errors.js';
 import { redactReport, redactionPolicyFingerprint } from '../shared/redaction.js';
 import type { PersistenceResult } from './retention.js';
-import { retainBaselineEntries } from './retention.js';
-import { resolveSafeStorageDir } from './storage-boundary.js';
+import { baselineEntryFileName, retainBaselineEntries } from './retention.js';
+import { assertSafeStorageDir, resolveSafeStorageDir } from './storage-boundary.js';
 
 export type BaselineSelection = {
   entry: BaselineEntry | null;
@@ -41,27 +42,60 @@ function versionLabel(value: unknown): string {
   return typeof value === 'number' || typeof value === 'string' ? `v${value}` : 'missing';
 }
 
+function assertReportMatchesSnapshot(snapshot: RepositorySnapshot, report: DiagnosisReport): void {
+  if (
+    report.metadata.inputId !== snapshot.inputId ||
+    report.metadata.repositoryPath !== snapshot.repositoryPath ||
+    report.metadata.unitId !== snapshot.unitId
+  ) {
+    throw new ConfigError(snapshot.repositoryPath, 'diagnosis report does not match the repository snapshot');
+  }
+}
+
 export async function saveBaseline(snapshot: RepositorySnapshot, report: DiagnosisReport): Promise<PersistenceResult> {
+  assertReportMatchesSnapshot(snapshot, report);
   const policy = await loadPolicy(snapshot.repositoryPath, snapshot.config.policyFile);
-  const baselineDir = await resolveSafeStorageDir(snapshot.repositoryPath, snapshot.config.baselineDir, 'baselineDir', true);
-  const cutoff = new Date(Date.now() - policy.retentionDays * 24 * 60 * 60 * 1000);
-  const retention = [await retainBaselineEntries(baselineDir, cutoff)];
-  const sourceCommitSha = snapshot.gitAvailable
-    ? await new DefaultGitProvider().resolveRef(snapshot.repositoryPath, 'HEAD')
-    : undefined;
+  let sourceCommitSha: string | undefined;
+  if (snapshot.gitAvailable) {
+    if (!snapshot.sourceCommitSha) {
+      throw new ConfigError(snapshot.repositoryPath, 'Git commit identity was not captured during intake');
+    }
+    if (snapshot.gitDirty) {
+      throw new ConfigError(snapshot.repositoryPath, 'refusing to save a commit-bound baseline from a dirty worktree');
+    }
+    const currentGit = await new DefaultGitProvider().inspectRepository(snapshot.repositoryPath);
+    if (!currentGit || currentGit.headSha !== snapshot.sourceCommitSha) {
+      throw new ConfigError(snapshot.repositoryPath, 'Git HEAD changed after repository intake');
+    }
+    if (currentGit.statusFingerprint !== snapshot.gitStatusFingerprint) {
+      throw new ConfigError(snapshot.repositoryPath, 'Git worktree state changed after repository intake');
+    }
+    if (currentGit.dirty) {
+      throw new ConfigError(snapshot.repositoryPath, 'worktree became dirty after repository intake');
+    }
+    sourceCommitSha = snapshot.sourceCommitSha;
+  }
   const redacted = redactReport(report, policy.redactPaths);
   const entry = baselineEntrySchema.parse({
     schemaVersion: BASELINE_SCHEMA_VERSION,
+    kind: 'reg-score/baseline',
     inputId: redacted.metadata.inputId,
     generatedAt: redacted.metadata.generatedAt,
     assessmentContractVersion: redacted.metadata.assessmentContractVersion,
     sourceCommitSha,
     redactionPolicyFingerprint: redactionPolicyFingerprint(policy.redactPaths),
+    analysisContextFingerprint: diagnosisContextFingerprint(snapshot.analysisContextFingerprint, report),
     report: redacted,
   });
-  const storageId = entry.sourceCommitSha ? `${entry.inputId}-${entry.sourceCommitSha}` : entry.inputId;
-  const baselinePath = path.join(baselineDir, `${storageId}.json`);
-  await atomicWriteFile(baselinePath, JSON.stringify(entry, null, 2));
+  const baselineDir = await resolveSafeStorageDir(snapshot.repositoryPath, snapshot.config.baselineDir, 'baselineDir', true);
+  const cutoff = new Date(Date.now() - policy.retentionDays * 24 * 60 * 60 * 1000);
+  const retention = [await retainBaselineEntries(baselineDir, cutoff)];
+  const baselinePath = path.join(baselineDir.path, baselineEntryFileName(entry));
+  await atomicWriteFile(
+    baselinePath,
+    JSON.stringify(entry, null, 2),
+    () => assertSafeStorageDir(baselineDir),
+  );
   return { path: baselinePath, retention };
 }
 
@@ -69,7 +103,7 @@ export async function loadBaseline(
   snapshot: RepositorySnapshot,
   resolvedBaseSha: string,
 ): Promise<BaselineSelection> {
-  let baselineDir: string;
+  let baselineDir: Awaited<ReturnType<typeof resolveSafeStorageDir>>;
   try {
     baselineDir = await resolveSafeStorageDir(snapshot.repositoryPath, snapshot.config.baselineDir, 'baselineDir', false);
   } catch (error) {
@@ -82,11 +116,13 @@ export async function loadBaseline(
     throw error;
   }
 
-  const candidateNames = (await readdir(baselineDir)).filter((entry) => entry.endsWith('.json')).sort();
+  await assertSafeStorageDir(baselineDir);
+  const candidateNames = (await readdir(baselineDir.path)).filter((entry) => entry.endsWith('.json')).sort();
   const candidates: BaselineCandidate[] = [];
 
   for (const fileName of candidateNames) {
-    const baselinePath = path.join(baselineDir, fileName);
+    await assertSafeStorageDir(baselineDir);
+    const baselinePath = path.join(baselineDir.path, fileName);
     const fileStat = await lstat(baselinePath);
     if (!fileStat.isFile()) {
       continue;

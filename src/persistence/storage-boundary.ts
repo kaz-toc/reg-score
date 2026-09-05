@@ -3,12 +3,26 @@ import path from 'node:path';
 
 import { ConfigError } from '../shared/errors.js';
 
+export type SafeStorageDirectory = Readonly<{
+  path: string;
+  repositoryRealPath: string;
+  configuredDir: string;
+  label: string;
+  device: number;
+  inode: number;
+}>;
+
+function isWithinRepository(repositoryRealPath: string, storageRealPath: string): boolean {
+  const relative = path.relative(repositoryRealPath, storageRealPath);
+  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
 export async function resolveSafeStorageDir(
   repositoryPath: string,
   configuredDir: string,
   label: string,
   create: boolean,
-): Promise<string> {
+): Promise<SafeStorageDirectory> {
   if (path.isAbsolute(configuredDir)) {
     throw new ConfigError(configuredDir, `${label} must be a relative repository path`);
   }
@@ -19,9 +33,13 @@ export async function resolveSafeStorageDir(
   if (lexicalRelative.startsWith('..') || path.isAbsolute(lexicalRelative)) {
     throw new ConfigError(configuredDir, `${label} escapes repository root`);
   }
+  const storageSegments = lexicalRelative.split(path.sep).filter(Boolean);
+  if (storageSegments.length < 2) {
+    throw new ConfigError(configuredDir, `${label} must be a dedicated nested storage directory`);
+  }
 
   let component = repositoryRealPath;
-  for (const segment of lexicalRelative.split(path.sep).filter(Boolean)) {
+  for (const segment of storageSegments) {
     component = path.join(component, segment);
     const componentStat = await lstat(component).catch(() => null);
     if (componentStat?.isSymbolicLink()) {
@@ -34,10 +52,37 @@ export async function resolveSafeStorageDir(
   }
 
   const storageRealPath = await realpath(lexicalStoragePath);
-  const relative = path.relative(repositoryRealPath, storageRealPath);
-  if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
-    return storageRealPath;
+  if (!isWithinRepository(repositoryRealPath, storageRealPath)) {
+    throw new ConfigError(configuredDir, `${label} escapes repository root`);
+  }
+  const storageStat = await lstat(storageRealPath);
+  if (!storageStat.isDirectory() || storageStat.isSymbolicLink()) {
+    throw new ConfigError(configuredDir, `${label} must resolve to a regular directory`);
   }
 
-  throw new ConfigError(configuredDir, `${label} escapes repository root`);
+  return {
+    path: storageRealPath,
+    repositoryRealPath,
+    configuredDir,
+    label,
+    device: storageStat.dev,
+    inode: storageStat.ino,
+  };
+}
+
+export async function assertSafeStorageDir(boundary: SafeStorageDirectory): Promise<void> {
+  const currentStat = await lstat(boundary.path).catch(() => null);
+  if (!currentStat?.isDirectory() || currentStat.isSymbolicLink()) {
+    throw new ConfigError(boundary.configuredDir, `${boundary.label} changed after validation`);
+  }
+  const currentRealPath = await realpath(boundary.path).catch(() => null);
+  if (
+    currentRealPath !== boundary.path ||
+    !currentRealPath ||
+    !isWithinRepository(boundary.repositoryRealPath, currentRealPath) ||
+    currentStat.dev !== boundary.device ||
+    currentStat.ino !== boundary.inode
+  ) {
+    throw new ConfigError(boundary.configuredDir, `${boundary.label} changed after validation`);
+  }
 }

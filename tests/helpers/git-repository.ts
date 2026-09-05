@@ -25,7 +25,11 @@ export async function createGitRepository(files: Record<string, string> = {}): P
   await git(repositoryPath, ['init']);
   await git(repositoryPath, ['config', 'user.email', 'reg-score@example.test']);
   await git(repositoryPath, ['config', 'user.name', 'reg-score test']);
-  for (const [relativePath, content] of Object.entries(files)) {
+  const initialFiles = {
+    '.gitignore': '.reg-score/baselines/\n.reg-score/trends/\n',
+    ...files,
+  };
+  for (const [relativePath, content] of Object.entries(initialFiles)) {
     const absolutePath = path.join(repositoryPath, relativePath);
     await mkdir(path.dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, content);

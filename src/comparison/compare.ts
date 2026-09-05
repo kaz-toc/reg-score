@@ -11,6 +11,7 @@ export type ComparisonContext = {
   resolvedBaseSha: string;
   redactPaths: string[];
   redactionPolicyFingerprint: string;
+  analysisContextFingerprint: string;
   changedFiles: string[];
   blastRadius: BlastRadiusEntry[];
   incompatibilityReason?: string;
@@ -131,6 +132,9 @@ export function compareDiagnosis(
   }
   if (baseline.redactionPolicyFingerprint !== context.redactionPolicyFingerprint) {
     return incompatible(context, 'redaction policy mismatch — score and signal comparison suppressed');
+  }
+  if (baseline.analysisContextFingerprint !== context.analysisContextFingerprint) {
+    return incompatible(context, 'analysis context mismatch — score and signal comparison suppressed');
   }
 
   const comparisonCurrent = redactReport(current, context.redactPaths);

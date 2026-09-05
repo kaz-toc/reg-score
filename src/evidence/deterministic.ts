@@ -315,6 +315,7 @@ async function collectGitChurn(snapshot: RepositorySnapshot): Promise<Map<string
   const { promisify } = await import('node:util');
   const execFileAsync = promisify(execFile);
   const since = `${snapshot.config.churnDays} days ago`;
+  const analyzedPaths = new Set(snapshot.files.map((file) => file.relativePath.replace(/\\/g, '/')));
 
   try {
     const { stdout } = await execFileAsync(
@@ -325,7 +326,7 @@ async function collectGitChurn(snapshot: RepositorySnapshot): Promise<Map<string
     const counts = new Map<string, number>();
     for (const line of stdout.split('\n')) {
       const trimmed = line.trim();
-      if (!trimmed || trimmed.includes(' ')) {
+      if (!trimmed || trimmed.includes(' ') || !analyzedPaths.has(trimmed.replace(/\\/g, '/'))) {
         continue;
       }
       counts.set(trimmed, (counts.get(trimmed) ?? 0) + 1);

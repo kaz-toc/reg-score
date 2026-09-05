@@ -30,6 +30,8 @@ const emptySnapshot: RepositorySnapshot = {
   ],
   inputId: 'test',
   gitAvailable: false,
+  gitDirty: false,
+  analysisContextFingerprint: '0'.repeat(64),
   truncated: false,
   intakeIssues: [],
   config: { schemaVersion: 1 } as never,
@@ -109,7 +111,7 @@ describe('phase 4-6 capabilities', () => {
 
   it('does not auto-fail gate when calibration missing', () => {
     const policy = policySchema.parse({ schemaVersion: 1, gateEnabled: true, requiredCalibrationConditions: [] });
-    const evaluation = evaluatePolicy(90, 0.8, policy, false);
+    const evaluation = evaluatePolicy(90, 0.8, policy, false, []);
     expect(evaluation.gateWouldFail).toBe(false);
     expect(evaluation.reasons.some((r) => r.includes('calibration'))).toBe(true);
   });
@@ -121,7 +123,7 @@ describe('phase 4-6 capabilities', () => {
       requireCalibration: false,
       requiredCalibrationConditions: [],
     });
-    const evaluation = evaluatePolicy(90, 0.3, policy, true);
+    const evaluation = evaluatePolicy(90, 0.3, policy, true, []);
     expect(evaluation.gateWouldFail).toBe(false);
   });
 });

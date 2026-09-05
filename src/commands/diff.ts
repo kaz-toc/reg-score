@@ -4,6 +4,7 @@ import { DefaultGitProvider } from '../adapters/git-provider.js';
 import { compareDiagnosis } from '../comparison/compare.js';
 import { buildImportGraph } from '../evidence/deterministic.js';
 import { createRepositorySnapshot } from '../intake/snapshot.js';
+import { diagnosisContextFingerprint } from '../intake/analysis-context.js';
 import { loadPolicy } from '../operations/policy.js';
 import { loadBaseline } from '../persistence/baseline-store.js';
 import { runDiagnosis } from '../pipeline/diagnose.js';
@@ -93,6 +94,7 @@ export async function runDiffDiagnosis(repositoryPath: string, baseRef: string):
     resolvedBaseSha,
     redactPaths: policy.redactPaths,
     redactionPolicyFingerprint: redactionPolicyFingerprint(policy.redactPaths),
+    analysisContextFingerprint: diagnosisContextFingerprint(currentSnapshot.analysisContextFingerprint, current),
     changedFiles,
     blastRadius,
     incompatibilityReason: storedBaseline.reason,

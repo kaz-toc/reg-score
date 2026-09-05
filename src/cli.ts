@@ -136,7 +136,7 @@ program
     let entries: Awaited<ReturnType<typeof loadTrendHistory>> = [];
     try {
       const trendDir = await resolveSafeStorageDir(resolved, snapshot.config.trendDir, 'trendDir', false);
-      entries = await loadTrendHistory(path.join(trendDir, 'history.jsonl'));
+      entries = await loadTrendHistory(path.join(trendDir.path, 'history.jsonl'));
     } catch (error) {
       if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT')) {
         throw error;
@@ -183,6 +183,7 @@ program
       report.repository.confidence,
       policy,
       calibration.gateEligible,
+      calibration.missingRequiredConditions,
     );
     process.stdout.write(`${JSON.stringify(evaluation, null, 2)}\n`);
     if (evaluation.gateWouldFail) {
@@ -225,6 +226,8 @@ program
         files: [],
         inputId: 'plugins',
         gitAvailable: false,
+        gitDirty: false,
+        analysisContextFingerprint: '0'.repeat(64),
         truncated: false,
         intakeIssues: [],
         config: { schemaVersion: 1 } as never,

@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 
 import { describe, expect, it } from 'vitest';
 
-import { compareDiagnosis } from '../src/comparison/compare.js';
+import { compareDiagnosis, compareSignalChanges } from '../src/comparison/compare.js';
 import { runDiffDiagnosis } from '../src/commands/diff.js';
 import { createRepositorySnapshot } from '../src/intake/snapshot.js';
 import { saveBaseline } from '../src/persistence/baseline-store.js';
@@ -14,6 +14,7 @@ import { baselineEntrySchema } from '../src/schema/report.v1.js';
 import type { BaselineEntry, DiagnosisReport } from '../src/schema/report.v1.js';
 import { ConfigError } from '../src/shared/errors.js';
 import { redactionPolicyFingerprint } from '../src/shared/redaction.js';
+import { redactReport } from '../src/shared/redaction.js';
 import { createGitRepository } from './helpers/git-repository.js';
 
 const execFileAsync = promisify(execFile);
@@ -45,15 +46,43 @@ function minimalReport(inputId: string): DiagnosisReport {
 }
 
 describe('pure comparison', () => {
+  it('preserves distinct redacted evidence identities so removals remain visible', () => {
+    const evidence = (secret: string) => ({
+      evidenceId: `evidence:large-file:${secret}/same.ts`,
+      signalId: 'large-file' as const,
+      axisId: 'structural-fragility' as const,
+      path: `${secret}/same.ts`,
+      severity: 'medium' as const,
+      message: `large file at ${secret}/same.ts`,
+      source: 'deterministic' as const,
+    });
+    const first = evidence('secret-a');
+    const second = evidence('secret-b');
+    const base = { ...minimalReport('base'), evidence: [first, second] };
+    const current = { ...minimalReport('current'), evidence: [first] };
+    const policy = ['secret-a', 'secret-b'];
+    const redactedBase = redactReport(base, policy);
+    const redactedCurrent = redactReport(current, policy);
+
+    const changes = compareSignalChanges(redactedCurrent, redactedBase);
+
+    expect(new Set(redactedBase.evidence.map((item) => item.evidenceId)).size).toBe(2);
+    expect(changes.improvedSignals).toHaveLength(1);
+    expect(JSON.stringify(changes)).not.toContain('secret-a');
+    expect(JSON.stringify(changes)).not.toContain('secret-b');
+  });
+
   it('suppresses baseline-derived values when the redaction policy differs', () => {
     const current = minimalReport('current');
     const baseline: BaselineEntry = {
-      schemaVersion: 2,
+      schemaVersion: 3,
+      kind: 'reg-score/baseline',
       inputId: 'baseline',
       generatedAt: '2026-01-01T00:00:00.000Z',
       assessmentContractVersion: 2,
       sourceCommitSha: 'base-sha',
       redactionPolicyFingerprint: 'saved-policy',
+      analysisContextFingerprint: 'analysis-context',
       report: minimalReport('baseline'),
     };
 
@@ -61,6 +90,7 @@ describe('pure comparison', () => {
       resolvedBaseSha: 'base-sha',
       redactPaths: ['secret-repo'],
       redactionPolicyFingerprint: 'current-policy',
+      analysisContextFingerprint: 'analysis-context',
       changedFiles: [],
       blastRadius: [],
     });
@@ -71,6 +101,35 @@ describe('pure comparison', () => {
     expect(result.comparison.riskDelta).toBeUndefined();
     expect(result.comparison.newSignals).toEqual([]);
     expect(current.metadata.repositoryPath).toBe('/tmp/secret-repo');
+  });
+
+  it('suppresses baseline-derived values when the analysis context differs', () => {
+    const current = minimalReport('current');
+    const baseline = {
+      schemaVersion: 3,
+      kind: 'reg-score/baseline',
+      inputId: 'baseline',
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      assessmentContractVersion: 2,
+      sourceCommitSha: 'base-sha',
+      redactionPolicyFingerprint: redactionPolicyFingerprint([]),
+      analysisContextFingerprint: 'baseline-context',
+      report: minimalReport('baseline'),
+    } as BaselineEntry;
+
+    const result = compareDiagnosis(current, baseline, {
+      resolvedBaseSha: 'base-sha',
+      redactPaths: [],
+      redactionPolicyFingerprint: redactionPolicyFingerprint([]),
+      analysisContextFingerprint: 'current-context',
+      changedFiles: [],
+      blastRadius: [],
+    });
+
+    expect(result.base).toBeUndefined();
+    expect(result.comparison.compatible).toBe(false);
+    expect(result.comparison.reason).toContain('analysis context mismatch');
+    expect(result.comparison.riskDelta).toBeUndefined();
   });
 });
 
@@ -91,6 +150,187 @@ describe('commit-bound baseline comparison', () => {
       expect(unmatched.comparison.worsenedSignals).toEqual([]);
       expect(unmatched.comparison.improvedSignals).toEqual([]);
       expect(await readFile(saved.path, 'utf8')).toContain(repo.headSha);
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it('rejects a unit-scoped baseline for whole-repository comparison at the same commit', async () => {
+    const repo = await createGitRepository({
+      'reg-score.config.json': JSON.stringify({
+        schemaVersion: 1,
+        units: [{ id: 'core', roots: ['src/core'] }],
+      }),
+      'src/core/a.ts': 'export const a = 1;\n',
+      'src/other/b.ts': 'export const b = 1;\n',
+    });
+    try {
+      const unitSnapshot = await createRepositorySnapshot(repo.path, 'core');
+      await saveBaseline(unitSnapshot, await runDiagnosis(unitSnapshot));
+
+      const diff = await runDiffDiagnosis(repo.path, repo.headSha);
+
+      expect(diff.comparison.compatible).toBe(false);
+      expect(diff.comparison.reason).toContain('analysis context mismatch');
+      expect(diff.base).toBeUndefined();
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it('rejects a same-commit baseline when score-affecting configuration changes', async () => {
+    const configPath = 'reg-score.config.json';
+    const repo = await createGitRepository({
+      [configPath]: JSON.stringify({ schemaVersion: 1, maxFileLines: 100 }),
+      'src/a.ts': 'export const a = 1;\nexport const b = 2;\n',
+    });
+    try {
+      await checkout(repo.path, repo.baseSha);
+      const baselineSnapshot = await createRepositorySnapshot(repo.path);
+      await saveBaseline(baselineSnapshot, await runDiagnosis(baselineSnapshot));
+      await checkout(repo.path, repo.headSha);
+      await repo.write(configPath, JSON.stringify({ schemaVersion: 1, maxFileLines: 1 }));
+      await repo.commit('change analysis threshold');
+
+      const diff = await runDiffDiagnosis(repo.path, repo.baseSha);
+
+      expect(diff.comparison.compatible).toBe(false);
+      expect(diff.comparison.reason).toContain('analysis context mismatch');
+      expect(diff.base).toBeUndefined();
+      expect(diff.comparison.riskDelta).toBeUndefined();
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it('refuses to bind a dirty analyzed snapshot to the clean HEAD commit', async () => {
+    const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
+    try {
+      await repo.write('src/a.ts', `${'export const value = 1;\n'.repeat(900)}`);
+      const snapshot = await createRepositorySnapshot(repo.path);
+      const report = await runDiagnosis(snapshot);
+      const outcome = await saveBaseline(snapshot, report).catch((error: unknown) => error);
+
+      expect(snapshot.gitDirty).toBe(true);
+      expect(outcome).toBeInstanceOf(ConfigError);
+      expect(String(outcome)).toContain('dirty');
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it('refuses to bind an ignored analyzed source file to HEAD', async () => {
+    const repo = await createGitRepository({
+      '.gitignore': '.reg-score/baselines/\n.reg-score/trends/\nsrc/generated.ts\n',
+      'src/a.ts': 'export const a = 1;\n',
+      'src/generated.ts': 'export const generated = 1;\n',
+    });
+    try {
+      const snapshot = await createRepositorySnapshot(repo.path);
+      const outcome = await saveBaseline(snapshot, await runDiagnosis(snapshot)).catch((error: unknown) => error);
+
+      expect(snapshot.files.map((file) => file.relativePath)).toContain('src/generated.ts');
+      expect(snapshot.gitDirty).toBe(true);
+      expect(outcome).toBeInstanceOf(ConfigError);
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it('refuses to save a report produced from a different snapshot', async () => {
+    const first = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
+    const second = await createGitRepository({ 'src/b.ts': 'export const b = 2;\n' });
+    try {
+      const firstSnapshot = await createRepositorySnapshot(first.path);
+      const secondSnapshot = await createRepositorySnapshot(second.path);
+      const foreignReport = await runDiagnosis(secondSnapshot);
+
+      const outcome = await saveBaseline(firstSnapshot, foreignReport).catch((error: unknown) => error);
+
+      expect(outcome).toBeInstanceOf(ConfigError);
+      expect(String(outcome)).toContain('does not match');
+    } finally {
+      await Promise.all([first.cleanup(), second.cleanup()]);
+    }
+  });
+
+  it('rejects a baseline created by a different analyzer implementation', async () => {
+    const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
+    try {
+      const snapshot = await createRepositorySnapshot(repo.path);
+      await saveBaseline(snapshot, await runDiagnosis(snapshot, {
+        analyzerPlugins: [{
+          id: 'custom-typescript-v2',
+          extensions: ['.ts'],
+          capabilities: [{
+            language: 'typescript-javascript',
+            contractVersion: 2,
+            signals: ['large-file'],
+            completeness: 'partial',
+          }],
+          extract: async () => [],
+        }],
+      }));
+
+      const diff = await runDiffDiagnosis(repo.path, repo.headSha);
+
+      expect(diff.comparison.compatible).toBe(false);
+      expect(diff.comparison.reason).toContain('analysis context mismatch');
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it('rejects a baseline created by a different semantic provider implementation', async () => {
+    const repo = await createGitRepository({
+      'reg-score.config.json': JSON.stringify({
+        schemaVersion: 1,
+        llm: { enabled: true, provider: 'configured-provider', maxFiles: 1, sendScope: 'all' },
+      }),
+      'src/a.ts': 'export const a = 1;\n',
+    });
+    try {
+      const snapshot = await createRepositorySnapshot(repo.path);
+      await saveBaseline(snapshot, await runDiagnosis(snapshot, {
+        semanticProviderFactory: {
+          create: () => ({
+            status: 'available' as const,
+            provider: {
+              name: 'injected-provider',
+              analyze: async () => [{
+                findingId: 'finding:semantic:injected',
+                axisId: 'semantic-ambiguity' as const,
+                path: 'src/a.ts',
+                summary: 'injected semantic result',
+                relatedEvidenceIds: [],
+                confidence: 0.8,
+              }],
+            },
+          }),
+        },
+      }));
+
+      const diff = await runDiffDiagnosis(repo.path, repo.headSha);
+
+      expect(diff.comparison.compatible).toBe(false);
+      expect(diff.comparison.reason).toContain('analysis context mismatch');
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it('refuses a commit-bound save when HEAD changed after intake', async () => {
+    const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
+    try {
+      const snapshot = await createRepositorySnapshot(repo.path);
+      const report = await runDiagnosis(snapshot);
+      await repo.write('src/a.ts', 'export const a = 2;\n');
+      await repo.commit('move head after intake');
+
+      const outcome = await saveBaseline(snapshot, report).catch((error: unknown) => error);
+
+      expect(outcome).toBeInstanceOf(ConfigError);
+      expect(String(outcome)).toContain('HEAD changed');
     } finally {
       await repo.cleanup();
     }
@@ -142,14 +382,14 @@ describe('commit-bound baseline comparison', () => {
 
   it('compares a redacted current copy without mutating the raw current report', async () => {
     const repo = await createGitRepository({
+      '.reg-score/policy.json': JSON.stringify({
+        schemaVersion: 1,
+        redactPaths: ['secret-repo'],
+        requiredCalibrationConditions: [],
+      }),
       'secret-repo/a.ts': 'export const untested = 1;\n',
     });
     try {
-      await mkdir(path.join(repo.path, '.reg-score'), { recursive: true });
-      await writeFile(
-        path.join(repo.path, '.reg-score', 'policy.json'),
-        JSON.stringify({ schemaVersion: 1, redactPaths: ['secret-repo'], requiredCalibrationConditions: [] }),
-      );
       const snapshot = await createRepositorySnapshot(repo.path);
       await saveBaseline(snapshot, await runDiagnosis(snapshot));
 
@@ -167,15 +407,15 @@ describe('commit-bound baseline comparison', () => {
 
   it('keeps reordered overlapping redaction policies compatible without false signal changes', async () => {
     const repo = await createGitRepository({
+      '.reg-score/policy.json': JSON.stringify({
+        schemaVersion: 1,
+        redactPaths: ['secret', 'secret-repo'],
+        requiredCalibrationConditions: [],
+      }),
       'secret-repo/a.ts': 'export const untested = 1;\n',
     });
     try {
-      await mkdir(path.join(repo.path, '.reg-score'), { recursive: true });
       const policyPath = path.join(repo.path, '.reg-score', 'policy.json');
-      await writeFile(
-        policyPath,
-        JSON.stringify({ schemaVersion: 1, redactPaths: ['secret', 'secret-repo'], requiredCalibrationConditions: [] }),
-      );
       const snapshot = await createRepositorySnapshot(repo.path);
       await saveBaseline(snapshot, await runDiagnosis(snapshot));
       await writeFile(
@@ -204,19 +444,21 @@ describe('commit-bound baseline comparison', () => {
       await writeFile(
         path.join(baselineDir, 'older-compatible.json'),
         JSON.stringify({
-          schemaVersion: 2,
+          schemaVersion: 3,
+          kind: 'reg-score/baseline',
           inputId: 'older-compatible',
           generatedAt: '2026-01-01T00:00:00.000Z',
           assessmentContractVersion: 2,
           sourceCommitSha: repo.baseSha,
           redactionPolicyFingerprint: redactionPolicyFingerprint([]),
+          analysisContextFingerprint: snapshot.analysisContextFingerprint,
           report,
         }),
       );
       await writeFile(
         path.join(baselineDir, 'newer-incompatible.json'),
         JSON.stringify({
-          schemaVersion: 1,
+          schemaVersion: 2,
           inputId: 'newer-incompatible',
           generatedAt: '2026-01-02T00:00:00.000Z',
           assessmentContractVersion: 2,
@@ -246,7 +488,7 @@ describe('commit-bound baseline comparison', () => {
       await writeFile(
         path.join(baselineDir, 'unrelated-old.json'),
         JSON.stringify({
-          schemaVersion: 1,
+          schemaVersion: 2,
           inputId: 'unrelated-old',
           generatedAt: '2026-01-02T00:00:00.000Z',
           assessmentContractVersion: 2,
@@ -277,7 +519,7 @@ describe('commit-bound baseline comparison', () => {
       await writeFile(
         path.join(baselineDir, 'old.json'),
         JSON.stringify({
-          schemaVersion: 1,
+          schemaVersion: 2,
           inputId: report.metadata.inputId,
           generatedAt: report.metadata.generatedAt,
           assessmentContractVersion: report.metadata.assessmentContractVersion,
@@ -309,12 +551,14 @@ describe('commit-bound baseline comparison', () => {
       await writeFile(
         path.join(baselineDir, 'old-contract.json'),
         JSON.stringify({
-          schemaVersion: 2,
+          schemaVersion: 3,
+          kind: 'reg-score/baseline',
           inputId: report.metadata.inputId,
           generatedAt: report.metadata.generatedAt,
           assessmentContractVersion: 1,
           sourceCommitSha: repo.baseSha,
           redactionPolicyFingerprint: 'old-contract-policy',
+          analysisContextFingerprint: snapshot.analysisContextFingerprint,
           report: oldContractReport,
         }),
       );
