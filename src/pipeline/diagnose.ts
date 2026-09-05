@@ -8,6 +8,7 @@ import { assessRisk } from '../assessment/risk.js';
 import { buildInterventions } from '../recommendation/rules.js';
 import { getDefaultPlugins, extractEvidenceWithPlugins, negotiateCapabilities } from '../plugins/analyzer.js';
 import { runSemanticAnalysis } from '../semantic/provider.js';
+import { DefaultGitProvider } from '../adapters/git-provider.js';
 
 export async function runDiagnosis(snapshot: RepositorySnapshot): Promise<DiagnosisReport> {
   const plugins = getDefaultPlugins();
@@ -58,12 +59,28 @@ export async function appendTrend(snapshot: RepositorySnapshot, report: Diagnosi
   const trendDir = path.join(snapshot.repositoryPath, snapshot.config.trendDir);
   await mkdir(trendDir, { recursive: true });
   const trendPath = path.join(trendDir, 'history.jsonl');
+  const git = new DefaultGitProvider();
+  const commitSha = snapshot.gitAvailable ? await git.resolveHeadCommit(snapshot.repositoryPath) : undefined;
+  const history = await readFile(trendPath, 'utf8').catch(() => '');
+  const previousEntry = history
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as { commitSha?: string })
+    .at(-1);
+  const changedFiles =
+    snapshot.gitAvailable && previousEntry?.commitSha
+      ? await git.listChangedFiles(snapshot.repositoryPath, previousEntry.commitSha)
+      : [];
+
   const entry = {
     generatedAt: report.metadata.generatedAt,
     inputId: report.metadata.inputId,
     score: report.repository.regressionRiskScore,
     confidence: report.repository.confidence,
     contractVersion: report.metadata.assessmentContractVersion,
+    commitSha,
+    changedFiles,
     topClusters: report.clusters.slice(0, 5).map((cluster) => ({
       clusterId: cluster.clusterId,
       score: cluster.score,

@@ -4,10 +4,11 @@ import path from 'node:path';
 
 import { createRepositorySnapshot } from './intake/snapshot.js';
 import { appendTrend, runDiagnosis, saveBaseline } from './pipeline/diagnose.js';
-import { formatReport } from './reporting/format.js';
 import { runDiffDiagnosis, writeGitHubSummary, writeGitHubAnnotations } from './commands/diff.js';
 import { loadPolicy, evaluatePolicy } from './operations/policy.js';
 import { loadCalibration, summarizeCalibration } from './calibration/dataset.js';
+import { runGoldenAssessmentRegression } from './calibration/golden-regression.js';
+import { DefaultReporterAdapter } from './adapters/reporter.js';
 import { analyzeTrend, loadTrendHistory, rankInvestmentPriorities, trendPathFor } from './operations/trend.js';
 import {
   GoStubAnalyzerPlugin,
@@ -17,6 +18,7 @@ import {
 } from './plugins/analyzer.js';
 
 const program = new Command();
+const reporter = new DefaultReporterAdapter();
 
 program.name('reg-score').description('Regression risk scoring diagnostic tool').version('0.1.0');
 
@@ -40,7 +42,7 @@ program
       await appendTrend(snapshot, report);
     }
 
-    process.stdout.write(formatReport(report, format));
+    process.stdout.write(reporter.format(report, format));
     process.exit(0);
   });
 
@@ -66,7 +68,7 @@ program
       process.stderr.write('warning: assessment contract mismatch — risk delta suppressed\n');
     }
 
-    process.stdout.write(formatReport(diff.current, format));
+    process.stdout.write(reporter.format(diff.current, format));
     process.exit(0);
   });
 
@@ -140,7 +142,16 @@ program
 program
   .command('calibration')
   .argument('<path>', 'repository path')
-  .action(async (repoPath: string) => {
+  .option('--golden', 'run golden assessment regression check')
+  .action(async (repoPath: string, options: { golden?: boolean }) => {
+    if (options.golden) {
+      const report = await runGoldenAssessmentRegression();
+      process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+      if (!report.passed) {
+        process.exit(1);
+      }
+      return;
+    }
     const calibration = await loadCalibration(path.resolve(repoPath));
     process.stdout.write(`${summarizeCalibration(calibration)}\n`);
   });

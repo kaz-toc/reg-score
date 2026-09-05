@@ -222,9 +222,9 @@ reg-score diff . --base origin/main --format json
 | 1 | 完了 | `reg-score scan`, vitest 20件 |
 | 2 | 完了 | `fragile-cart-improved` fixture, `tests/intervention.test.ts` |
 | 3 | 完了 | `reg-score diff`, blast radius, GitHub advisory workflow |
-| 4 | 完了 | `.reg-score/calibration.json`, feedback 形式, golden 回帰 |
-| 5 | 完了 | plugin contract, `--unit`, Python/Go スタブ |
-| 6 | 完了 | `trend --analyze`, `priorities`, audit/retention ポリシー |
+| 4 | 完了 | calibration メトリクス, `calibration --golden`, feedback 形式 |
+| 5 | 完了 | provider adapters, `--unit`, Python/Go スタブ |
+| 6 | 完了 | `trend --analyze` + commit 追跡, `priorities`, audit ポリシー |
 
 ## 7. 最初のリリース境界
 

@@ -9,7 +9,16 @@ export type TrendEntry = {
   score: number;
   confidence: number;
   contractVersion: number;
+  commitSha?: string;
+  changedFiles?: string[];
   topClusters: Array<{ clusterId: string; score: number }>;
+};
+
+export type ContributingChange = {
+  generatedAt: string;
+  commitSha?: string;
+  score: number;
+  changedFiles: string[];
 };
 
 export type TrendAnalysis = {
@@ -17,6 +26,7 @@ export type TrendAnalysis = {
   degradationStartAt?: string;
   scoreDeltaFromFirst: number;
   contributingClusterIds: string[];
+  contributingChanges: ContributingChange[];
 };
 
 const COST_WEIGHT = { low: 1, medium: 2, high: 3 } as const;
@@ -59,14 +69,14 @@ export async function loadTrendHistory(trendPath: string): Promise<TrendEntry[]>
 
 export function analyzeTrend(entries: TrendEntry[]): TrendAnalysis {
   if (entries.length === 0) {
-    return { entries: [], scoreDeltaFromFirst: 0, contributingClusterIds: [] };
+    return { entries: [], scoreDeltaFromFirst: 0, contributingClusterIds: [], contributingChanges: [] };
   }
 
   const sorted = [...entries].sort((a, b) => a.generatedAt.localeCompare(b.generatedAt));
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
   if (!first || !last) {
-    return { entries: sorted, scoreDeltaFromFirst: 0, contributingClusterIds: [] };
+    return { entries: sorted, scoreDeltaFromFirst: 0, contributingClusterIds: [], contributingChanges: [] };
   }
 
   const scoreDeltaFromFirst = last.score - first.score;
@@ -85,11 +95,23 @@ export function analyzeTrend(entries: TrendEntry[]): TrendAnalysis {
     ...new Set(last.topClusters.filter((cluster) => cluster.score >= 50).map((cluster) => cluster.clusterId)),
   ];
 
+  const contributingChanges: ContributingChange[] = degradationStartAt
+    ? sorted
+        .filter((entry) => entry.generatedAt >= degradationStartAt)
+        .map((entry) => ({
+          generatedAt: entry.generatedAt,
+          commitSha: entry.commitSha,
+          score: entry.score,
+          changedFiles: entry.changedFiles ?? [],
+        }))
+    : [];
+
   return {
     entries: sorted,
     degradationStartAt,
     scoreDeltaFromFirst,
     contributingClusterIds,
+    contributingChanges,
   };
 }
 

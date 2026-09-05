@@ -5,6 +5,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 
 import type { DiagnosisReport } from '../schema/report.v1.js';
+import { DefaultGitProvider } from '../adapters/git-provider.js';
 import { buildImportGraph } from '../evidence/deterministic.js';
 import { createRepositorySnapshot } from '../intake/snapshot.js';
 import { runDiagnosis } from '../pipeline/diagnose.js';
@@ -90,29 +91,7 @@ export function computeBlastRadius(
 }
 
 async function listChangedFiles(repositoryPath: string, baseRef: string): Promise<string[]> {
-  try {
-    const { stdout } = await execFileAsync('git', ['diff', '--name-only', `${baseRef}...HEAD`], {
-      cwd: repositoryPath,
-    });
-    return stdout
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0 && /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(line))
-      .sort();
-  } catch {
-    try {
-      const { stdout } = await execFileAsync('git', ['diff', '--name-only', baseRef, 'HEAD'], {
-        cwd: repositoryPath,
-      });
-      return stdout
-        .split('\n')
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0 && /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(line))
-        .sort();
-    } catch {
-      return [];
-    }
-  }
+  return new DefaultGitProvider().listChangedFiles(repositoryPath, baseRef);
 }
 
 async function checkoutRef(repositoryPath: string, ref: string, worktreePath: string): Promise<void> {

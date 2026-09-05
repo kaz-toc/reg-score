@@ -10,7 +10,10 @@ export const calibrationRecordSchema = z
     sampleCount: z.number().int().nonnegative(),
     observedRegressions: z.number().int().nonnegative(),
     observedReverts: z.number().int().nonnegative(),
+    falsePositiveRate: z.number().min(0).max(1).optional(),
+    missRate: z.number().min(0).max(1).optional(),
     rankingQuality: z.number().min(0).max(1).optional(),
+    explanationUsefulness: z.number().min(0).max(1).optional(),
   })
   .strict();
 
@@ -48,7 +51,7 @@ export function summarizeCalibration(dataset: CalibrationDataset): string {
   const lines = ['Calibration summary:', `Gate eligible: ${dataset.gateEligible}`];
   for (const record of dataset.records) {
     lines.push(
-      `- band ${record.scoreBand}: n=${record.sampleCount}, regressions=${record.observedRegressions}, reverts=${record.observedReverts}`,
+      `- band ${record.scoreBand}: n=${record.sampleCount}, regressions=${record.observedRegressions}, reverts=${record.observedReverts}, fp=${record.falsePositiveRate ?? 'n/a'}, miss=${record.missRate ?? 'n/a'}, rank=${record.rankingQuality ?? 'n/a'}, explain=${record.explanationUsefulness ?? 'n/a'}`,
     );
   }
   if (!dataset.gateEligible) {

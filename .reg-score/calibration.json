@@ -7,7 +7,10 @@
       "sampleCount": 12,
       "observedRegressions": 1,
       "observedReverts": 0,
-      "rankingQuality": 0.62
+      "falsePositiveRate": 0.08,
+      "missRate": 0.12,
+      "rankingQuality": 0.62,
+      "explanationUsefulness": 0.71
     },
     {
       "schemaVersion": 1,
@@ -15,7 +18,10 @@
       "sampleCount": 8,
       "observedRegressions": 3,
       "observedReverts": 1,
-      "rankingQuality": 0.58
+      "falsePositiveRate": 0.15,
+      "missRate": 0.18,
+      "rankingQuality": 0.58,
+      "explanationUsefulness": 0.65
     }
   ],
   "gateEligible": false,

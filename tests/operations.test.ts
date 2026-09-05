@@ -27,6 +27,8 @@ describe('phase 5-6 operations', () => {
         score: 30,
         confidence: 0.8,
         contractVersion: 1,
+        commitSha: 'aaa',
+        changedFiles: ['src/a.ts'],
         topClusters: [{ clusterId: 'cluster:structural-fragility', score: 40 }],
       },
       {
@@ -35,6 +37,8 @@ describe('phase 5-6 operations', () => {
         score: 55,
         confidence: 0.8,
         contractVersion: 1,
+        commitSha: 'bbb',
+        changedFiles: ['src/b.ts'],
         topClusters: [{ clusterId: 'cluster:structural-fragility', score: 70 }],
       },
     ];
@@ -42,6 +46,8 @@ describe('phase 5-6 operations', () => {
     expect(analysis.degradationStartAt).toBe('2026-01-02T00:00:00.000Z');
     expect(analysis.scoreDeltaFromFirst).toBe(25);
     expect(analysis.contributingClusterIds).toContain('cluster:structural-fragility');
+    expect(analysis.contributingChanges).toHaveLength(1);
+    expect(analysis.contributingChanges[0]?.commitSha).toBe('bbb');
   });
 
   it('detects golden score drift as calibration regression signal', async () => {
