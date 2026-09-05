@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "sourceRoots": ["src"],
+  "sourceExtensions": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs"],
+  "excludeSegments": ["node_modules", "dist", "build", "coverage", "vendor", "generated", "__tests__", "test", "tests"],
+  "maxNonBlankLines": 800,
+  "regressionRoot": "test-fixtures/regressions",
+  "requiredDocuments": [
+    "AGENTS.md",
+    "ARCHITECTURE.md",
+    "CONTRIBUTING.md",
+    "CONTEXT.md",
+    "PROJECT.md",
+    "docs/incidents/LEDGER.md",
+    "docs/testing/REGRESSION-CONTRACTS.md",
+    "docs/verification/BOUNDARY-MATRIX.md"
+  ],
+  "projectChecks": []
+}
+

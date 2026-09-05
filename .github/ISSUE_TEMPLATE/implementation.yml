@@ -1,0 +1,65 @@
+name: 実装スライス
+description: 独立してレビュー可能な 1 成果を提案する
+title: ""
+body:
+  - type: textarea
+    id: deliverable
+    attributes:
+      label: Deliverable（成果物）
+      description: この Issue が生み出す 1 つの end-to-end 成果。
+    validations:
+      required: true
+  - type: textarea
+    id: invariant
+    attributes:
+      label: Invariant（不変条件）
+      description: 真であり続けなければならない 1 つのユーザー可視またはアーキテクチャ上の事実。
+    validations:
+      required: true
+  - type: dropdown
+    id: change-kind
+    attributes:
+      label: Change kind（変更種別）
+      options:
+        - Behavior
+        - Structural
+        - Defect
+        - Test
+        - Docs
+    validations:
+      required: true
+  - type: input
+    id: primary-boundary
+    attributes:
+      label: Primary boundary（主要境界）
+      description: 主に変更する単一のプロダクトまたはインフラ境界。
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies（依存）
+      description: 実際にブロックする Issue のみ。blocker がなければ "none" と書く。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria（受け入れ基準）
+      description: 完了を証明する観測可能なチェックボックス。
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification（検証）
+      description: 正確な自動コマンドと境界別の手動証拠。
+    validations:
+      required: true
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-goals（対象外）
+      description: この Issue から意図的に除外する近接作業。
+    validations:
+      required: true

@@ -1,0 +1,52 @@
+name: バグ報告
+description: 観測可能な 1 つのプロダクト障害を記録する
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        修正を提案する前に観測事実を記録する。確認済み欠陥 1 件につき回帰契約 1 件。
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior（観測された振る舞い）
+      description: 何が起きたか。可能なら正確な出力やスクリーンショットを含める。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior（期待される振る舞い）
+      description: 真であり続けなければならない 1 つの観測可能な不変条件。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction（再現手順）
+      description: 最小の順序付きステップ、入力、前提条件。
+    validations:
+      required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact（影響）
+      options:
+        - Blocks a primary workflow
+        - Produces incorrect or unsafe output
+        - Degrades a secondary workflow
+        - Cosmetic only
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment（環境）
+      description: バージョン、コミット、プラットフォーム、ランタイム、アカウント種別、関連設定。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence（証拠）
+      description: ログ、スクリーンショット、失敗コマンド、関連 incident（secrets は除去）。

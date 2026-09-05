@@ -1,0 +1,17 @@
+{
+  "name": "reg-score",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "setup": "node scripts/setup-product.mjs",
+    "harness:test": "node --test harness/__tests__/*.test.mjs",
+    "harness:validate": "node harness/run-checks.mjs validate",
+    "harness:report": "node harness/run-checks.mjs report",
+    "validate": "npm run harness:test && npm run harness:validate"
+  }
+}
+
