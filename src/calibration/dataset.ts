@@ -1,7 +1,10 @@
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { z } from 'zod';
+
+import { ConfigError } from '../shared/errors.js';
+import { deriveGateEligible } from '../operations/policy.js';
 
 export const calibrationRecordSchema = z
   .object({
@@ -21,34 +24,61 @@ export const calibrationDatasetSchema = z
   .object({
     schemaVersion: z.literal(1),
     records: z.array(calibrationRecordSchema),
-    gateEligible: z.boolean(),
+    gateEligible: z.boolean().optional(),
     gateConditions: z.array(z.string()),
   })
   .strict();
 
 export type CalibrationDataset = z.infer<typeof calibrationDatasetSchema>;
 
-export async function loadCalibration(repositoryPath: string): Promise<CalibrationDataset> {
+const DEFAULT_GATE_CONDITIONS = [
+  'calibration dataset with >= 30 samples per score band',
+  'golden assessment regression tests passing',
+  'documented false positive / false negative rates',
+  'ranking quality and explanation usefulness recorded',
+];
+
+export async function loadCalibration(repositoryPath: string, goldenRegressionPassed = false): Promise<CalibrationDataset & { gateEligible: boolean }> {
   const calibrationPath = path.join(repositoryPath, '.reg-score', 'calibration.json');
   try {
-    const raw = await readFile(calibrationPath, 'utf8');
-    return calibrationDatasetSchema.parse(JSON.parse(raw));
+    await access(calibrationPath);
   } catch {
-    return calibrationDatasetSchema.parse({
+    return {
       schemaVersion: 1,
       records: [],
       gateEligible: false,
-      gateConditions: [
-        'calibration dataset with >= 30 samples per score band',
-        'golden assessment regression tests passing',
-        'documented false positive / false negative rates',
-      ],
+      gateConditions: DEFAULT_GATE_CONDITIONS,
+    };
+  }
+
+  try {
+    const raw = await readFile(calibrationPath, 'utf8');
+    const dataset = calibrationDatasetSchema.parse(JSON.parse(raw));
+    const minSamplesPerBand = dataset.records.every((record) => record.sampleCount >= 30);
+    const hasFalsePositiveRate = dataset.records.some((record) => record.falsePositiveRate !== undefined);
+    const hasMissRate = dataset.records.some((record) => record.missRate !== undefined);
+    const hasRankingQuality = dataset.records.some((record) => record.rankingQuality !== undefined);
+    const hasExplanationUsefulness = dataset.records.some((record) => record.explanationUsefulness !== undefined);
+
+    const gateEligible = deriveGateEligible({
+      calibrationPresent: dataset.records.length > 0,
+      minSamplesPerBand,
+      hasFalsePositiveRate,
+      hasMissRate,
+      hasRankingQuality,
+      hasExplanationUsefulness,
+      goldenRegressionPassed,
     });
+
+    return { ...dataset, gateEligible };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new ConfigError(calibrationPath, reason);
   }
 }
 
-export function summarizeCalibration(dataset: CalibrationDataset): string {
-  const lines = ['Calibration summary:', `Gate eligible: ${dataset.gateEligible}`];
+export function summarizeCalibration(dataset: CalibrationDataset & { gateEligible: boolean }): string {
+  const lines = ['Calibration summary:', `Gate eligible (derived): ${dataset.gateEligible}`];
   for (const record of dataset.records) {
     lines.push(
       `- band ${record.scoreBand}: n=${record.sampleCount}, regressions=${record.observedRegressions}, reverts=${record.observedReverts}, fp=${record.falsePositiveRate ?? 'n/a'}, miss=${record.missRate ?? 'n/a'}, rank=${record.rankingQuality ?? 'n/a'}, explain=${record.explanationUsefulness ?? 'n/a'}`,

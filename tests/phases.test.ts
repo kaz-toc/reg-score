@@ -11,18 +11,36 @@ import {
 } from '../src/plugins/analyzer.js';
 import { loadCalibration } from '../src/calibration/dataset.js';
 import { evaluatePolicy, policySchema } from '../src/operations/policy.js';
+import type { RepositorySnapshot } from '../src/intake/snapshot.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 
+const emptySnapshot: RepositorySnapshot = {
+  repositoryPath: root,
+  files: [
+    {
+      relativePath: 'src/a.ts',
+      absolutePath: path.join(root, 'src/a.ts'),
+      extension: '.ts',
+      content: '',
+      contentHash: 'abc',
+      nonBlankLines: 1,
+    },
+  ],
+  inputId: 'test',
+  gitAvailable: false,
+  truncated: false,
+  intakeIssues: [],
+  config: { schemaVersion: 1 } as never,
+};
+
 describe('phase 4-6 capabilities', () => {
   it('negotiates plugin capabilities without zeroing unsupported signals', () => {
-    const negotiation = negotiateCapabilities([
-      new TypeScriptAnalyzerPlugin(),
-      new PythonStubAnalyzerPlugin(),
-      new GoStubAnalyzerPlugin(),
-    ]);
+    const plugins = [new TypeScriptAnalyzerPlugin(), new PythonStubAnalyzerPlugin(), new GoStubAnalyzerPlugin()];
+    const negotiation = negotiateCapabilities(emptySnapshot, plugins);
     expect(negotiation.supported).toContain('dep-cycle');
-    expect(negotiation.unsupported).toEqual([]);
+    expect(negotiation.unevaluated).toEqual([]);
+    expect(negotiation.capabilities.some((entry) => entry.language === 'typescript-javascript')).toBe(true);
   });
 
   it('loads calibration dataset with gate conditions', async () => {

@@ -16,11 +16,22 @@ import {
   TypeScriptAnalyzerPlugin,
   negotiateCapabilities,
 } from './plugins/analyzer.js';
+import { RegScoreError } from './shared/errors.js';
+import { redactReport } from './shared/redaction.js';
 
-const program = new Command();
+const VALID_FORMATS = new Set(['console', 'markdown', 'json']);
 const reporter = new DefaultReporterAdapter();
 
+const program = new Command();
+
 program.name('reg-score').description('Regression risk scoring diagnostic tool').version('0.1.0');
+
+function parseFormat(value: string): 'console' | 'markdown' | 'json' {
+  if (!VALID_FORMATS.has(value)) {
+    throw new RegScoreError(`invalid format: ${value}`);
+  }
+  return value as 'console' | 'markdown' | 'json';
+}
 
 program
   .command('scan')
@@ -30,9 +41,11 @@ program
   .option('--record-trend', 'append score to trend history', false)
   .option('--unit <id>', 'monorepo unit id from reg-score.config.json')
   .action(async (repoPath: string, options: { format: string; saveBaseline: boolean; recordTrend: boolean; unit?: string }) => {
-    const format = options.format as 'console' | 'markdown' | 'json';
+    const format = parseFormat(options.format);
     const snapshot = await createRepositorySnapshot(repoPath, options.unit);
     const report = await runDiagnosis(snapshot);
+    const policy = await loadPolicy(snapshot.repositoryPath, snapshot.config.policyFile);
+    const output = reporter.format(redactReport(report, policy.redactPaths), format);
 
     if (options.saveBaseline) {
       const baselinePath = await saveBaseline(snapshot, report);
@@ -42,7 +55,7 @@ program
       await appendTrend(snapshot, report);
     }
 
-    process.stdout.write(reporter.format(report, format));
+    process.stdout.write(output);
     process.exit(0);
   });
 
@@ -53,22 +66,36 @@ program
   .option('--format <format>', 'console|markdown|json', 'console')
   .option('--github-summary <file>', 'write GitHub job summary markdown')
   .option('--github-annotations <file>', 'write GitHub workflow annotations')
-  .action(async (repoPath: string, options: { base: string; format: string; githubSummary?: string; githubAnnotations?: string }) => {
+  .option('--emit-annotations', 'emit GitHub workflow annotations to stdout')
+  .action(async (
+    repoPath: string,
+    options: { base: string; format: string; githubSummary?: string; githubAnnotations?: string; emitAnnotations?: boolean },
+  ) => {
     const diff = await runDiffDiagnosis(repoPath, options.base);
-    const format = options.format as 'console' | 'markdown' | 'json';
+    const format = parseFormat(options.format);
+    const snapshot = await createRepositorySnapshot(repoPath);
+    const policy = await loadPolicy(snapshot.repositoryPath, snapshot.config.policyFile);
+    const redacted = {
+      ...diff,
+      current: redactReport(diff.current, policy.redactPaths),
+      base: redactReport(diff.base, policy.redactPaths),
+    };
 
     if (options.githubSummary) {
-      await writeGitHubSummary(diff, options.githubSummary);
+      await writeGitHubSummary(redacted, options.githubSummary);
     }
     if (options.githubAnnotations) {
-      await writeGitHubAnnotations(diff, options.githubAnnotations);
+      await writeGitHubAnnotations(redacted, options.githubAnnotations);
+    }
+    if (options.emitAnnotations) {
+      process.stdout.write(reporter.formatGitHubAnnotations(redacted));
     }
 
-    if (diff.contractMismatch) {
-      process.stderr.write('warning: assessment contract mismatch — risk delta suppressed\n');
+    if (!diff.comparison.compatible) {
+      process.stderr.write(`warning: ${diff.comparison.reason ?? 'assessment contract mismatch — risk delta suppressed'}\n`);
     }
 
-    process.stdout.write(reporter.format(diff.current, format));
+    process.stdout.write(reporter.formatDiff(redacted, format));
     process.exit(0);
   });
 
@@ -126,7 +153,8 @@ program
       return;
     }
     const report = await runDiagnosis(snapshot);
-    const calibration = await loadCalibration(snapshot.repositoryPath);
+    const golden = await runGoldenAssessmentRegression();
+    const calibration = await loadCalibration(snapshot.repositoryPath, golden.passed);
     const evaluation = evaluatePolicy(
       report.repository.regressionRiskScore,
       report.repository.confidence,
@@ -152,21 +180,34 @@ program
       }
       return;
     }
-    const calibration = await loadCalibration(path.resolve(repoPath));
+    const golden = await runGoldenAssessmentRegression();
+    const calibration = await loadCalibration(path.resolve(repoPath), golden.passed);
     process.stdout.write(`${summarizeCalibration(calibration)}\n`);
   });
 
 program
   .command('plugins')
   .description('list analyzer plugin capabilities')
-  .action(() => {
+  .action(async () => {
     const plugins = [new TypeScriptAnalyzerPlugin(), new PythonStubAnalyzerPlugin(), new GoStubAnalyzerPlugin()];
-    const negotiation = negotiateCapabilities(plugins);
+    const negotiation = negotiateCapabilities(
+      {
+        repositoryPath: process.cwd(),
+        files: [],
+        inputId: 'plugins',
+        gitAvailable: false,
+        truncated: false,
+        intakeIssues: [],
+        config: { schemaVersion: 1 } as never,
+      },
+      plugins,
+    );
     process.stdout.write(`${JSON.stringify({ plugins: plugins.map((p) => p.id), ...negotiation }, null, 2)}\n`);
   });
 
 program.parseAsync(process.argv).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
   process.stderr.write(`reg-score: ${message}\n`);
-  process.exit(2);
+  const exitCode = error instanceof RegScoreError ? error.exitCode : 2;
+  process.exit(exitCode);
 });

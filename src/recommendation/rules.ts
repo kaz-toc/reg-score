@@ -1,7 +1,7 @@
-import type { Evidence, Intervention, RiskCluster } from '../schema/report.v1.js';
+import type { Evidence, Intervention, RiskCluster, SignalId } from '../schema/report.v1.js';
 
 const RULES: Array<{
-  signalId: string;
+  signalId: SignalId;
   kind: Intervention['kind'];
   title: string;
   description: string;

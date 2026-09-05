@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createRepositorySnapshot } from '../intake/snapshot.js';
 import { runDiagnosis } from '../pipeline/diagnose.js';
+import type { SignalId } from '../schema/report.v1.js';
 
 export type GoldenSpec = {
   description: string;
@@ -49,12 +50,12 @@ export async function runGoldenAssessmentRegression(fixturesRoot?: string): Prom
       violations.push(`score ${report.repository.regressionRiskScore} < min ${spec.expected.minScore}`);
     }
     for (const required of spec.expected.requiredSignals) {
-      if (!signals.has(required)) {
+      if (!signals.has(required as SignalId)) {
         violations.push(`missing required signal ${required}`);
       }
     }
     for (const forbidden of spec.expected.forbiddenSignals) {
-      if (signals.has(forbidden)) {
+      if (signals.has(forbidden as SignalId)) {
         violations.push(`forbidden signal present ${forbidden}`);
       }
     }
