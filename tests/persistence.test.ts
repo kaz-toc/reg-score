@@ -105,6 +105,38 @@ describe('persistence storage boundary', () => {
     }
   });
 
+  it('rejects a case-variant top-level storage path when it aliases a shared control directory', async () => {
+    const policy = JSON.stringify({
+      schemaVersion: 1,
+      retentionDays: 90,
+      redactPaths: [],
+      requiredCalibrationConditions: [],
+    });
+    const repo = await createGitRepository({
+      'reg-score.config.json': JSON.stringify({ schemaVersion: 1, baselineDir: '.REG-SCORE' }),
+      '.reg-score/policy.json': policy,
+      'src/a.ts': 'export const a = 1;\n',
+    });
+    const canonicalControlPath = await realpath(path.join(repo.path, '.reg-score'));
+    const variantPath = path.join(repo.path, '.REG-SCORE');
+    const variantRealPath = await realpath(variantPath).catch(() => undefined);
+
+    try {
+      const snapshot = await createRepositorySnapshot(repo.path);
+      const outcome = await saveBaseline(snapshot, await runDiagnosis(snapshot)).catch((error: unknown) => error);
+
+      if (variantRealPath === canonicalControlPath) {
+        expect(outcome).toBeInstanceOf(ConfigError);
+        expect(await readFile(path.join(repo.path, '.reg-score/policy.json'), 'utf8')).toBe(policy);
+      } else {
+        expect(outcome).not.toBeInstanceOf(Error);
+        expect(path.dirname((outcome as Awaited<ReturnType<typeof saveBaseline>>).path)).toBe(await realpath(variantPath));
+      }
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
   it('rejects an intermediate storage component symlink without touching its target', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'reg-score-storage-'));
     const repositoryPath = path.join(root, 'repository');

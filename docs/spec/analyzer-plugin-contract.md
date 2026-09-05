@@ -23,6 +23,8 @@ type AnalyzerCapability = {
 - 未対応シグナルはゼロ点にせず `metadata.unevaluatedAreas` に反映する。
 - 各 Evidence は `source: deterministic` と共通 `signalId` を使用する。
 - 言語固有解析器は `src/plugins/analyzer.ts` に登録する。
+- 同じ言語に複数の解析器が参加する場合、各解析器の ID、実装バージョン、capability contract を個別に report/fingerprint へ記録する。
+- 選択された解析器 ID と、解析器内の言語 capability は一意でなければならない。
 
 ## Versioning
 

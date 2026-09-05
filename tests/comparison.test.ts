@@ -25,9 +25,10 @@ function versionedAnalyzer(
   implementationVersion: string,
   contractVersion: number,
   emitHighRiskEvidence: boolean,
+  id = 'same-analyzer',
 ): AnalyzerPlugin {
   return {
-    id: 'same-analyzer',
+    id,
     implementationVersion,
     extensions: ['.ts'],
     capabilities: [{
@@ -315,6 +316,43 @@ describe('commit-bound baseline comparison', () => {
 
       expect(baselineReport.repository.regressionRiskScore).toBe(0);
       expect(currentReport.repository.regressionRiskScore).toBe(75);
+      expect(comparison.comparison.compatible).toBe(false);
+      expect(comparison.comparison.reason).toContain('analysis context mismatch');
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it('fingerprints every same-language analyzer that can contribute evidence', async () => {
+    const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
+    try {
+      const snapshot = await createRepositorySnapshot(repo.path);
+      const baselineReport = await runDiagnosis(snapshot, {
+        analyzerPlugins: [
+          versionedAnalyzer('1.0.0', 2, false, 'first-analyzer'),
+          versionedAnalyzer('1.0.0', 2, false, 'second-analyzer'),
+        ],
+      });
+      await saveBaseline(snapshot, baselineReport);
+      const currentReport = await runDiagnosis(snapshot, {
+        analyzerPlugins: [
+          versionedAnalyzer('1.0.0', 2, false, 'first-analyzer'),
+          versionedAnalyzer('2.0.0', 2, true, 'second-analyzer'),
+        ],
+      });
+
+      const comparison = await compareAgainstSavedBaseline(snapshot, currentReport, repo.headSha);
+
+      expect(baselineReport.repository.regressionRiskScore).toBe(0);
+      expect(currentReport.repository.regressionRiskScore).toBe(75);
+      expect(currentReport.capabilities.map((capability) => [
+        capability.analyzerId,
+        capability.analyzerImplementationVersion,
+        capability.contractVersion,
+      ])).toEqual([
+        ['first-analyzer', '1.0.0', 2],
+        ['second-analyzer', '2.0.0', 2],
+      ]);
       expect(comparison.comparison.compatible).toBe(false);
       expect(comparison.comparison.reason).toContain('analysis context mismatch');
     } finally {

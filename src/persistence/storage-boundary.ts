@@ -31,6 +31,25 @@ function isWithinRepository(repositoryRealPath: string, storageRealPath: string)
   return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
+async function aliasesSharedOrControlDirectory(
+  repositoryRealPath: string,
+  storageRealPath: string,
+  storageDevice: number,
+  storageInode: number,
+): Promise<boolean> {
+  const physicalSegments = path.relative(repositoryRealPath, storageRealPath).split(path.sep).filter(Boolean);
+  if (physicalSegments.length !== 1) {
+    return false;
+  }
+  for (const protectedName of SHARED_OR_CONTROL_DIRECTORIES) {
+    const protectedStat = await lstat(path.join(repositoryRealPath, protectedName)).catch(() => null);
+    if (protectedStat && protectedStat.dev === storageDevice && protectedStat.ino === storageInode) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export async function resolveSafeStorageDir(
   repositoryPath: string,
   configuredDir: string,
@@ -75,6 +94,16 @@ export async function resolveSafeStorageDir(
   const storageStat = await lstat(storageRealPath);
   if (!storageStat.isDirectory() || storageStat.isSymbolicLink()) {
     throw new ConfigError(configuredDir, `${label} must resolve to a regular directory`);
+  }
+  if (
+    await aliasesSharedOrControlDirectory(
+      repositoryRealPath,
+      storageRealPath,
+      storageStat.dev,
+      storageStat.ino,
+    )
+  ) {
+    throw new ConfigError(configuredDir, `${label} must not alias a shared or control directory`);
   }
 
   return {

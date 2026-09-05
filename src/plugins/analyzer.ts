@@ -75,7 +75,20 @@ export function detectLanguages(snapshot: RepositorySnapshot): SourceLanguage[] 
 
 export function selectPlugins(snapshot: RepositorySnapshot, plugins: AnalyzerPlugin[]): AnalyzerPlugin[] {
   const languages = new Set(detectLanguages(snapshot));
-  return plugins.filter((plugin) => plugin.capabilities.some((cap) => languages.has(cap.language)));
+  const selected = plugins.filter((plugin) => plugin.capabilities.some((cap) => languages.has(cap.language)));
+  const analyzerIds = selected.map((plugin) => plugin.id);
+  if (new Set(analyzerIds).size !== analyzerIds.length) {
+    throw new IntakeError('selected analyzer IDs must be unique');
+  }
+  for (const plugin of selected) {
+    const capabilityLanguages = plugin.capabilities.map((capability) => capability.language);
+    if (new Set(capabilityLanguages).size !== capabilityLanguages.length) {
+      throw new IntakeError(`analyzer ${plugin.id} has ambiguous capabilities for the same language`);
+    }
+  }
+  return selected.sort((left, right) =>
+    `${left.id}:${left.implementationVersion}`.localeCompare(`${right.id}:${right.implementationVersion}`),
+  );
 }
 
 export function negotiateCapabilities(
@@ -91,8 +104,11 @@ export function negotiateCapabilities(
   const capabilities: CapabilityResult[] = [];
 
   for (const language of languages) {
-    const plugin = selected.find((entry) => entry.capabilities.some((cap) => cap.language === language));
-    if (!plugin) {
+    const contributors = selected.flatMap((plugin) => {
+      const capability = plugin.capabilities.find((entry) => entry.language === language);
+      return capability ? [{ plugin, capability }] : [];
+    });
+    if (contributors.length === 0) {
       capabilities.push({
         language,
         contractVersion: ASSESSMENT_CONTRACT_VERSION,
@@ -105,22 +121,21 @@ export function negotiateCapabilities(
       continue;
     }
 
-    const capability = plugin.capabilities.find((entry) => entry.language === language);
-    if (!capability) {
-      continue;
+    for (const { plugin, capability } of contributors) {
+      const supportedSignals = capability.signals
+        .filter((signal) => snapshot.gitAvailable || signal !== 'git-churn')
+        .sort();
+      const unevaluatedSignals = ALL_SIGNAL_IDS.filter((signal) => !supportedSignals.includes(signal));
+      capabilities.push({
+        language,
+        contractVersion: capability.contractVersion,
+        completeness: capability.completeness,
+        supportedSignals,
+        unevaluatedSignals,
+        analyzerId: plugin.id,
+        analyzerImplementationVersion: plugin.implementationVersion,
+      });
     }
-
-    const supportedSignals = capability.signals.filter((signal) => snapshot.gitAvailable || signal !== 'git-churn');
-    const unevaluatedSignals = ALL_SIGNAL_IDS.filter((signal) => !supportedSignals.includes(signal));
-    capabilities.push({
-      language,
-      contractVersion: capability.contractVersion,
-      completeness: capability.completeness,
-      supportedSignals,
-      unevaluatedSignals,
-      analyzerId: plugin.id,
-      analyzerImplementationVersion: plugin.implementationVersion,
-    });
   }
 
   const supported = [...new Set(capabilities.flatMap((entry) => entry.supportedSignals))].sort();
