@@ -90,14 +90,19 @@ export function analyzeTrend(entries: TrendEntry[]): TrendAnalysis {
   const scoreDeltaFromFirst = last.score - first.score;
 
   let degradationStartAt: string | undefined;
-  for (let index = sorted.length - 1; index > 0; index -= 1) {
-    const current = sorted[index];
-    const previous = sorted[index - 1];
-    if (current && previous && current.score > previous.score) {
-      degradationStartAt = previous.generatedAt;
-    } else if (degradationStartAt) {
-      break;
+  if (sorted.length >= 2 && last.score > first.score) {
+    let startIdx = sorted.length - 1;
+    for (let index = 0; index < sorted.length; index += 1) {
+      const entry = sorted[index];
+      if (!entry) {
+        continue;
+      }
+      const maxFromIndex = Math.max(...sorted.slice(index).map((item) => item.score));
+      if (entry.score < last.score && maxFromIndex > entry.score) {
+        startIdx = Math.min(startIdx, index);
+      }
     }
+    degradationStartAt = sorted[startIdx]?.generatedAt;
   }
 
   const startEntry = degradationStartAt ? sorted.find((entry) => entry.generatedAt === degradationStartAt) : undefined;

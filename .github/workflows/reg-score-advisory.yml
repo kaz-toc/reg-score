@@ -29,7 +29,10 @@ jobs:
         run: |
           npm run reg-score -- diff . --base origin/${{ github.base_ref }} --format markdown \
             --github-summary "$RUNNER_TEMP/reg-score-summary.md" \
-            --github-annotations "$RUNNER_TEMP/reg-score-annotations.txt"
+            --emit-annotations > "$RUNNER_TEMP/reg-score-annotations.txt"
+
+      - name: policy evaluate (advisory)
+        run: npm run reg-score -- policy . --evaluate
         continue-on-error: true
 
       - name: Publish job summary
@@ -38,4 +41,4 @@ jobs:
 
       - name: Publish PR annotations
         if: always() && hashFiles(format('{0}/reg-score-annotations.txt', runner.temp)) != ''
-        run: cat "$RUNNER_TEMP/reg-score-annotations.txt" >> "$GITHUB_STEP_SUMMARY"
+        run: cat "$RUNNER_TEMP/reg-score-annotations.txt"

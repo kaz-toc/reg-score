@@ -1,6 +1,6 @@
-import type { CapabilityResult, Evidence, SignalId, SourceLanguage } from '../schema/report.v1.js';
-import { ALL_SIGNAL_IDS, ASSESSMENT_CONTRACT_VERSION } from '../schema/report.v1.js';
-import type { RepositorySnapshot } from '../intake/snapshot.js';
+import type { CapabilityResult, Evidence, RiskAxisId, SignalId, SourceLanguage } from '../schema/report.v1.js';
+import { ALL_SIGNAL_IDS, ASSESSMENT_CONTRACT_VERSION, SIGNAL_AXIS } from '../schema/report.v1.js';
+import type { RepositorySnapshot, SourceFile } from '../intake/snapshot.js';
 import { IntakeError } from '../shared/errors.js';
 
 export type AnalyzerCapability = {
@@ -34,6 +34,29 @@ const TS_SIGNALS: SignalId[] = [
   'deep-nesting',
   'unresolved-import',
 ];
+
+function filterFiles(snapshot: RepositorySnapshot, extensions: readonly string[]): SourceFile[] {
+  return snapshot.files.filter((file) => extensions.includes(file.extension));
+}
+
+function extractLargeFileEvidence(
+  files: SourceFile[],
+  snapshot: RepositorySnapshot,
+  languageLabel: string,
+): Evidence[] {
+  return files
+    .filter((file) => file.nonBlankLines > snapshot.config.maxFileLines)
+    .map((file) => ({
+      evidenceId: `evidence:large-file:${file.relativePath}`,
+      signalId: 'large-file' as const,
+      axisId: 'structural-fragility' as const,
+      path: file.relativePath,
+      severity: 'medium' as const,
+      message: `${languageLabel}: large file (${file.nonBlankLines} lines)`,
+      metrics: { lines: file.nonBlankLines },
+      source: 'deterministic' as const,
+    }));
+}
 
 export function getRegisteredExtensions(): Set<string> {
   return new Set(Object.values(LANGUAGE_EXTENSIONS).flat());
@@ -114,7 +137,10 @@ export class TypeScriptAnalyzerPlugin implements AnalyzerPlugin {
 
   async extract(snapshot: RepositorySnapshot): Promise<Evidence[]> {
     const { extractDeterministicEvidence } = await import('../evidence/deterministic.js');
-    return extractDeterministicEvidence(snapshot);
+    return extractDeterministicEvidence({
+      ...snapshot,
+      files: filterFiles(snapshot, this.extensions),
+    });
   }
 }
 
@@ -125,25 +151,13 @@ export class PythonStubAnalyzerPlugin implements AnalyzerPlugin {
     {
       language: 'python',
       contractVersion: ASSESSMENT_CONTRACT_VERSION,
-      signals: ['large-file', 'missing-test-pair'],
+      signals: ['large-file'],
       completeness: 'partial',
     },
   ];
 
   async extract(snapshot: RepositorySnapshot): Promise<Evidence[]> {
-    const pyFiles = snapshot.files.filter((f) => f.extension === '.py');
-    return pyFiles
-      .filter((f) => f.nonBlankLines > snapshot.config.maxFileLines)
-      .map((f) => ({
-        evidenceId: `evidence:large-file:${f.relativePath}`,
-        signalId: 'large-file' as const,
-        axisId: 'structural-fragility' as const,
-        path: f.relativePath,
-        severity: 'medium' as const,
-        message: `Python: large file (${f.nonBlankLines} lines)`,
-        metrics: { lines: f.nonBlankLines },
-        source: 'deterministic' as const,
-      }));
+    return extractLargeFileEvidence(filterFiles(snapshot, this.extensions), snapshot, 'Python');
   }
 }
 
@@ -160,24 +174,19 @@ export class GoStubAnalyzerPlugin implements AnalyzerPlugin {
   ];
 
   async extract(snapshot: RepositorySnapshot): Promise<Evidence[]> {
-    const goFiles = snapshot.files.filter((f) => f.extension === '.go');
-    return goFiles
-      .filter((f) => f.nonBlankLines > snapshot.config.maxFileLines)
-      .map((f) => ({
-        evidenceId: `evidence:large-file:${f.relativePath}`,
-        signalId: 'large-file' as const,
-        axisId: 'structural-fragility' as const,
-        path: f.relativePath,
-        severity: 'medium' as const,
-        message: `Go: large file (${f.nonBlankLines} lines)`,
-        metrics: { lines: f.nonBlankLines },
-        source: 'deterministic' as const,
-      }));
+    return extractLargeFileEvidence(filterFiles(snapshot, this.extensions), snapshot, 'Go');
   }
 }
 
 export function getDefaultPlugins(): AnalyzerPlugin[] {
   return [new TypeScriptAnalyzerPlugin(), new PythonStubAnalyzerPlugin(), new GoStubAnalyzerPlugin()];
+}
+
+export function axisHasSupportedSignals(axisId: RiskAxisId, capabilities: CapabilityResult[]): boolean {
+  const axisSignals = (Object.entries(SIGNAL_AXIS) as Array<[SignalId, typeof axisId]>)
+    .filter(([, mappedAxis]) => mappedAxis === axisId)
+    .map(([signal]) => signal);
+  return capabilities.some((capability) => axisSignals.some((signal) => capability.supportedSignals.includes(signal)));
 }
 
 export async function extractEvidenceWithPlugins(

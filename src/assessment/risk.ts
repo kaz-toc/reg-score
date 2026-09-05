@@ -19,6 +19,7 @@ import {
 } from '../schema/report.v1.js';
 import type { RepositorySnapshot } from '../intake/snapshot.js';
 import type { SemanticProviderResolution } from '../semantic/provider.js';
+import { axisHasSupportedSignals } from '../plugins/analyzer.js';
 
 const AXIS_NAMES: Record<RiskAxisId, string> = {
   'structural-fragility': 'Structural Fragility',
@@ -287,7 +288,10 @@ export function assessRisk(input: AssessmentInput): DiagnosisReport {
   const axes: AxisAssessment[] = axisIds.map((axisId) => {
     const axisEvidence = input.evidence.filter((item) => item.axisId === axisId);
     const semantic = input.semanticFindings.filter((item) => item.axisId === axisId);
-    const unevaluated = axisId === 'semantic-ambiguity' && semanticAxisUnevaluated;
+    const unevaluated =
+      axisId === 'semantic-ambiguity'
+        ? semanticAxisUnevaluated
+        : !axisHasSupportedSignals(axisId, input.capabilities) && axisEvidence.length === 0;
     const score = unevaluated ? 0 : axisScoreForEvidence(axisEvidence, semantic);
     const languageCapability = input.capabilities.find((entry) =>
       entry.unevaluatedSignals.some((signal) => SIGNAL_AXIS[signal as Exclude<SignalId, 'semantic-ambiguity'>] === axisId),

@@ -1,6 +1,6 @@
 import type { DiagnosisReport, DiffReport } from '../schema/report.v1.js';
 import { formatDiffReport, formatReport } from '../reporting/format.js';
-import { formatGitHubAnnotationsStdout } from '../commands/diff.js';
+import { formatGitHubAnnotations } from '../reporting/github.js';
 
 export type ReportFormat = 'json' | 'markdown' | 'console';
 
@@ -20,7 +20,7 @@ export class DefaultReporterAdapter implements ReporterAdapter {
   }
 
   formatGitHubAnnotations(diff: DiffReport): string {
-    return formatGitHubAnnotationsStdout(diff);
+    return formatGitHubAnnotations(diff);
   }
 }
 

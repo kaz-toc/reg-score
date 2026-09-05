@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { createRepositorySnapshot } from './intake/snapshot.js';
 import { appendTrend, runDiagnosis, saveBaseline } from './pipeline/diagnose.js';
-import { runDiffDiagnosis, writeGitHubSummary, writeGitHubAnnotations } from './commands/diff.js';
+import { runDiffDiagnosis } from './commands/diff.js';
 import { loadPolicy, evaluatePolicy } from './operations/policy.js';
 import { loadCalibration, summarizeCalibration } from './calibration/dataset.js';
 import { runGoldenAssessmentRegression } from './calibration/golden-regression.js';
@@ -17,7 +17,8 @@ import {
   negotiateCapabilities,
 } from './plugins/analyzer.js';
 import { RegScoreError } from './shared/errors.js';
-import { redactReport } from './shared/redaction.js';
+import { redactDiffReport, redactReport } from './shared/redaction.js';
+import { writeGitHubAnnotationsFile, writeGitHubSummaryFile } from './reporting/github.js';
 
 const VALID_FORMATS = new Set(['console', 'markdown', 'json']);
 const reporter = new DefaultReporterAdapter();
@@ -75,17 +76,13 @@ program
     const format = parseFormat(options.format);
     const snapshot = await createRepositorySnapshot(repoPath);
     const policy = await loadPolicy(snapshot.repositoryPath, snapshot.config.policyFile);
-    const redacted = {
-      ...diff,
-      current: redactReport(diff.current, policy.redactPaths),
-      base: redactReport(diff.base, policy.redactPaths),
-    };
+    const redacted = redactDiffReport(diff, policy.redactPaths);
 
     if (options.githubSummary) {
-      await writeGitHubSummary(redacted, options.githubSummary);
+      await writeGitHubSummaryFile(redacted, options.githubSummary);
     }
     if (options.githubAnnotations) {
-      await writeGitHubAnnotations(redacted, options.githubAnnotations);
+      await writeGitHubAnnotationsFile(redacted, options.githubAnnotations);
     }
     if (options.emitAnnotations) {
       process.stdout.write(reporter.formatGitHubAnnotations(redacted));
@@ -102,7 +99,7 @@ program
 program
   .command('baseline')
   .argument('<path>', 'repository path')
-  .option('--save', 'save current scan as baseline')
+  .option('--save', 'save current scan as baseline', false)
   .action(async (repoPath: string, options: { save?: boolean }) => {
     const snapshot = await createRepositorySnapshot(repoPath);
     if (options.save) {

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { access, readFile } from 'node:fs/promises';
+import { access, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { RegScoreConfig } from '../shared/config.js';
@@ -93,12 +93,7 @@ async function walkFiles(
   try {
     entries = await readdir(current, { withFileTypes: true });
   } catch {
-    issues.push({
-      kind: 'missing-unit-root',
-      path: path.relative(repositoryPath, current) || '.',
-      message: 'unit root is missing or unreadable',
-    });
-    return false;
+    throw new IntakeError(`unit root is missing or unreadable: ${path.relative(repositoryPath, current) || '.'}`);
   }
 
   entries.sort((a, b) => a.name.localeCompare(b.name));
@@ -202,6 +197,18 @@ export async function loadConfig(repositoryPath: string): Promise<RegScoreConfig
 
 export async function createRepositorySnapshot(repositoryPath: string, unitId?: string): Promise<RepositorySnapshot> {
   const resolved = path.resolve(repositoryPath);
+  try {
+    const rootStat = await stat(resolved);
+    if (!rootStat.isDirectory()) {
+      throw new IntakeError(`repository path is not a directory: ${resolved}`);
+    }
+  } catch (error) {
+    if (error instanceof IntakeError) {
+      throw error;
+    }
+    throw new IntakeError(`repository path does not exist: ${resolved}`);
+  }
+
   const config = await loadConfig(resolved);
   const unit = unitId ? config.units.find((entry) => entry.id === unitId) : undefined;
   if (unitId && !unit) {

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { writeGitHubAnnotations, writeGitHubSummary } from '../src/commands/diff.js';
+import { writeGitHubAnnotationsFile, writeGitHubSummaryFile } from '../src/reporting/github.js';
 import { diffReportSchema } from '../src/schema/report.v1.js';
 import { createRepositorySnapshot } from '../src/intake/snapshot.js';
 import { saveBaseline, loadBaseline, runDiagnosis } from '../src/pipeline/diagnose.js';
@@ -82,7 +82,7 @@ describe('integration: trend corrupt line errors', () => {
         inputId: 'a',
         score: 1,
         confidence: 1,
-        contractVersion: 1,
+        contractVersion: 2,
         topClusters: [],
       })}\n{broken\n`,
     );
@@ -98,7 +98,7 @@ describe('integration: diff report contract', () => {
       current: {
         metadata: {
           schemaVersion: 1,
-          assessmentContractVersion: 1,
+          assessmentContractVersion: 2,
           generatedAt: '2026-01-01T00:00:00.000Z',
           inputId: 'c',
           repositoryPath: '/tmp',
@@ -117,7 +117,7 @@ describe('integration: diff report contract', () => {
       base: {
         metadata: {
           schemaVersion: 1,
-          assessmentContractVersion: 1,
+          assessmentContractVersion: 2,
           generatedAt: '2026-01-01T00:00:00.000Z',
           inputId: 'b',
           repositoryPath: '/tmp',
@@ -156,7 +156,7 @@ describe('integration: github outputs', () => {
       current: {
         metadata: {
           schemaVersion: 1,
-          assessmentContractVersion: 1,
+          assessmentContractVersion: 2,
           generatedAt: '2026-01-01T00:00:00.000Z',
           inputId: 'c',
           repositoryPath: '/tmp',
@@ -183,7 +183,7 @@ describe('integration: github outputs', () => {
       base: {
         metadata: {
           schemaVersion: 1,
-          assessmentContractVersion: 1,
+          assessmentContractVersion: 2,
           generatedAt: '2026-01-01T00:00:00.000Z',
           inputId: 'b',
           repositoryPath: '/tmp',
@@ -225,8 +225,8 @@ describe('integration: github outputs', () => {
 
     const summaryPath = path.join(dir, 'summary.md');
     const annotationsPath = path.join(dir, 'annotations.txt');
-    await writeGitHubSummary(diff, summaryPath);
-    await writeGitHubAnnotations(diff, annotationsPath);
+    await writeGitHubSummaryFile(diff, summaryPath);
+    await writeGitHubAnnotationsFile(diff, annotationsPath);
     const summary = await readFile(summaryPath, 'utf8');
     const annotations = await readFile(annotationsPath, 'utf8');
     expect(summary).toContain('cycle detected');
