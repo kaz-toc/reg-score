@@ -6,7 +6,7 @@ reg-score は、コードベースが将来の変更でデグレを起こしや�
 
 ## 現在の状態
 
-プロダクトは企画・評価設計段階です。アプリケーションコードと公開パッケージはまだありません。段階的な成果物と完了条件は [ROADMAP.md](ROADMAP.md) を参照してください。
+Phase 0–6 の成果物を実装済み。`reg-score scan` / `diff` / `baseline` / `trend` / `policy` / `calibration` / `plugins` コマンドが利用可能。最初の公開リリース境界（Phase 0 + Phase 1）は満たしている。
 
 ## 目指す診断
 
@@ -63,4 +63,6 @@ npm run validate
 
 ## リポジトリ
 
-将来の GitHub リポジトリは `kaz-toc/reg-score` を想定していますが、この初期化ではリモートリポジトリの作成、push、npm 公開を行いません。
+GitHub: [kaz-toc/reg-score](https://github.com/kaz-toc/reg-score)
+
+npm 公開前は `private: true` を維持し、名称・ライセンス・送信データ方針を確認してください。

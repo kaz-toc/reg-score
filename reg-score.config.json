@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "exclude": ["node_modules", "dist", "build", "coverage", ".git"],
+  "maxFiles": 5000,
+  "maxFileLines": 800,
+  "fanOutThreshold": 8,
+  "fanInThreshold": 8,
+  "churnDays": 90,
+  "llm": {
+    "enabled": false,
+    "provider": "none",
+    "maxFiles": 20
+  },
+  "baselineDir": ".reg-score/baselines",
+  "trendDir": ".reg-score/trends",
+  "policyFile": ".reg-score/policy.json"
+}

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "records": [
+    {
+      "schemaVersion": 1,
+      "scoreBand": "0-30",
+      "sampleCount": 12,
+      "observedRegressions": 1,
+      "observedReverts": 0,
+      "rankingQuality": 0.62
+    },
+    {
+      "schemaVersion": 1,
+      "scoreBand": "31-60",
+      "sampleCount": 8,
+      "observedRegressions": 3,
+      "observedReverts": 1,
+      "rankingQuality": 0.58
+    }
+  ],
+  "gateEligible": false,
+  "gateConditions": [
+    "calibration dataset with >= 30 samples per score band",
+    "golden assessment regression tests passing",
+    "documented false positive / false negative rates"
+  ]
+}

@@ -18,12 +18,14 @@ reg-score は、コードベースが将来の変更でデグレを起こしや�
 
 ## コマンド
 
-- `npm run validate` — ガバナンス検証
+- `npm run validate` — ガバナンス + 型検査 + テスト + ビルド
+- `npm run build` — TypeScript ビルド
+- `npm run test` — プロダクトテスト (vitest)
+- `npm run reg-score -- scan <path> --format markdown` — リポジトリ診断
+- `npm run reg-score -- diff <path> --base origin/main --format json` — 差分診断
 - `npm run harness:test` — ガバナンスハーネスのテスト
 - `npm run harness:validate` — リポジトリポリシーの検証
 - `npm run harness:report` — read-only 構造レポート
-
-プロダクトの build / test / dev コマンドは、最初の実装スライスで追加します。
 
 ## ロードマップ
 

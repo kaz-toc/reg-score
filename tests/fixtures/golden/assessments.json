@@ -1,0 +1,20 @@
+{
+  "stable-cart": {
+    "description": "小規模でテスト付きの安定構造。低リスクを期待。",
+    "expected": {
+      "maxScore": 35,
+      "requiredSignals": [],
+      "forbiddenSignals": ["dep-cycle"],
+      "minClusters": 0
+    }
+  },
+  "fragile-cart": {
+    "description": "循環依存・barrel・テスト欠落を含む脆弱構造。高リスクを期待。",
+    "expected": {
+      "minScore": 25,
+      "requiredSignals": ["dep-cycle", "missing-test-pair"],
+      "forbiddenSignals": [],
+      "minClusters": 1
+    }
+  }
+}

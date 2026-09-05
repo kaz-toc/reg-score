@@ -18,9 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
-      - name: Test governance harness
-        run: npm run harness:test
-      - name: Validate repository governance
-        run: npm run harness:validate
+          node-version-file: .nvmrc
+      - run: npm ci
+      - run: npm run validate
 

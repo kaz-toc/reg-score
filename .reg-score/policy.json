@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "advisoryThreshold": 70,
+  "gateEnabled": false,
+  "gateThreshold": 85,
+  "requireCalibration": true,
+  "retentionDays": 90,
+  "redactPaths": []
+}
