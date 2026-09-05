@@ -133,6 +133,45 @@ describe('assessment contract', () => {
     expect(report.axes.find((axis) => axis.axisId === 'change-volatility')?.unevaluated).toBe(true);
   });
 
+  it('does not let unsupported git churn evidence override capability negotiation', () => {
+    const nonGitSnapshot = { ...baseSnapshot, gitAvailable: false };
+    const capabilities = negotiateCapabilities(
+      {
+        ...nonGitSnapshot,
+        files: [{ relativePath: 'src/a.ts', absolutePath: '/tmp/repo/src/a.ts', extension: '.ts', content: '', contentHash: 'a', nonBlankLines: 1 }],
+      } as never,
+      [new TypeScriptAnalyzerPlugin()],
+    ).capabilities;
+
+    const report = assessRisk({
+      snapshot: nonGitSnapshot as never,
+      evidence: [
+        {
+          evidenceId: 'evidence:git-churn:src/a.ts',
+          signalId: 'git-churn',
+          axisId: 'change-volatility',
+          path: 'src/a.ts',
+          severity: 'high',
+          message: 'manually supplied churn evidence',
+          source: 'deterministic',
+        },
+      ],
+      semanticFindings: [],
+      capabilities,
+      analyzers: ['typescript-javascript-v1'],
+      selectedAnalyzers: 1,
+      successfulAnalyzers: 1,
+      semanticResolution: { status: 'unavailable', reason: 'LLM not configured' },
+    });
+
+    expect(report.axes.find((axis) => axis.axisId === 'change-volatility')).toMatchObject({
+      unevaluated: true,
+      score: 0,
+    });
+    expect(report.clusters.some((cluster) => cluster.axisId === 'change-volatility')).toBe(false);
+    expect(report.repository.regressionRiskScore).toBe(0);
+  });
+
   it('clusters by mechanism rather than axis only', () => {
     const evidence: Evidence[] = [
       {
@@ -160,7 +199,15 @@ describe('assessment contract', () => {
       snapshot: baseSnapshot as never,
       evidence,
       semanticFindings: [],
-      capabilities: [],
+      capabilities: [
+        {
+          language: 'typescript-javascript',
+          completeness: 'full',
+          supportedSignals: ['dep-cycle', 'large-file'],
+          unevaluatedSignals: [],
+          analyzerId: 'typescript-javascript-v1',
+        },
+      ],
       analyzers: ['typescript-javascript-v1'],
       selectedAnalyzers: 1,
       successfulAnalyzers: 1,

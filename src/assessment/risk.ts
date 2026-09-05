@@ -281,6 +281,9 @@ export function assessRisk(input: AssessmentInput): DiagnosisReport {
   const semanticAxisUnevaluated =
     input.semanticResolution.status !== 'available' ||
     (input.snapshot.config.llm.enabled && input.semanticFindings.length === 0);
+  const evaluatedEvidence = input.evidence.filter(
+    (item) => item.axisId === 'semantic-ambiguity' || axisHasSupportedSignals(item.axisId, input.capabilities),
+  );
 
   const axes: AxisAssessment[] = axisIds.map((axisId) => {
     const axisEvidence = input.evidence.filter((item) => item.axisId === axisId);
@@ -288,7 +291,7 @@ export function assessRisk(input: AssessmentInput): DiagnosisReport {
     const unevaluated =
       axisId === 'semantic-ambiguity'
         ? semanticAxisUnevaluated
-        : !axisHasSupportedSignals(axisId, input.capabilities) && axisEvidence.length === 0;
+        : !axisHasSupportedSignals(axisId, input.capabilities);
     const score = unevaluated ? 0 : axisScoreForEvidence(axisEvidence, semantic);
     const languageCapability = input.capabilities.find((entry) =>
       entry.unevaluatedSignals.some((signal) => SIGNAL_AXIS[signal as Exclude<SignalId, 'semantic-ambiguity'>] === axisId),
@@ -306,7 +309,7 @@ export function assessRisk(input: AssessmentInput): DiagnosisReport {
     };
   });
 
-  const clusters = buildMechanismClusters(input.evidence, input.semanticFindings);
+  const clusters = buildMechanismClusters(evaluatedEvidence, input.semanticFindings);
   const repositoryScore = aggregateRepositoryScore(axes, clusters);
   const totalContribution = axes.filter((a) => !a.unevaluated).reduce((sum, a) => sum + a.score, 0) || 1;
   for (const axis of axes) {
