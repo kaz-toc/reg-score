@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { redactReport } from '../src/shared/redaction.js';
+import { redactReport, redactionPolicyFingerprint } from '../src/shared/redaction.js';
 import { runDiagnosis } from '../src/pipeline/diagnose.js';
 import { createRepositorySnapshot } from '../src/intake/snapshot.js';
 import { deriveGateEligible } from '../src/operations/policy.js';
@@ -17,6 +17,13 @@ describe('policy redaction and gate eligibility', () => {
     const redacted = redactReport(report, ['stable-cart']);
     expect(JSON.stringify(redacted)).not.toContain('stable-cart');
     expect(report.metadata.repositoryPath).toContain('stable-cart');
+  });
+
+  it('fingerprints a normalized set of redaction paths', () => {
+    expect(redactionPolicyFingerprint(['secret/b', 'secret/a', 'secret/b']))
+      .toBe(redactionPolicyFingerprint(['secret/a', 'secret/b']));
+    expect(redactionPolicyFingerprint(['secret/a']))
+      .not.toBe(redactionPolicyFingerprint(['secret/b']));
   });
 
   it('derives gate eligibility from observable calibration metrics', () => {

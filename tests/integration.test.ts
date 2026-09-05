@@ -8,10 +8,18 @@ import { describe, expect, it } from 'vitest';
 import { writeGitHubAnnotationsFile, writeGitHubSummaryFile } from '../src/reporting/github.js';
 import { diffReportSchema } from '../src/schema/report.v1.js';
 import { createRepositorySnapshot } from '../src/intake/snapshot.js';
-import { saveBaseline, loadBaseline, runDiagnosis } from '../src/pipeline/diagnose.js';
+import { loadBaseline, saveBaseline } from '../src/persistence/baseline-store.js';
+import { runDiagnosis } from '../src/pipeline/diagnose.js';
 import { loadTrendHistory } from '../src/operations/trend.js';
-import { formatConsoleReport, formatJsonReport, formatMarkdownReport } from '../src/reporting/format.js';
+import {
+  formatConsoleReport,
+  formatDiffConsoleReport,
+  formatDiffMarkdownReport,
+  formatJsonReport,
+  formatMarkdownReport,
+} from '../src/reporting/format.js';
 import { baselineEntrySchema } from '../src/schema/report.v1.js';
+import { createGitRepository } from './helpers/git-repository.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const fixturesRoot = path.join(root, 'fixtures');
@@ -54,17 +62,20 @@ describe('integration: output evidence traceability', () => {
 
 describe('integration: baseline atomic round-trip', () => {
   it('persists and reloads a schema-valid baseline entry', async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), 'reg-score-baseline-'));
-    const snapshot = await createRepositorySnapshot(path.join(fixturesRoot, 'stable-cart'));
-    const relocated = { ...snapshot, repositoryPath: dir, config: { ...snapshot.config, baselineDir: '.reg-score/baselines' } };
-    const report = await runDiagnosis(relocated);
-    const baseline = await saveBaseline(relocated, report);
-    const raw = await readFile(baseline.path, 'utf8');
-    const entry = baselineEntrySchema.parse(JSON.parse(raw));
-    const loaded = await loadBaseline(relocated, entry.inputId);
-    expect(loaded?.entry.inputId).toBe(entry.inputId);
-    expect(loaded?.entry.report.metadata.inputId).toBe(report.metadata.inputId);
-    await rm(dir, { recursive: true, force: true });
+    const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
+    try {
+      const snapshot = await createRepositorySnapshot(repo.path);
+      const report = await runDiagnosis(snapshot);
+      const baseline = await saveBaseline(snapshot, report);
+      const raw = await readFile(baseline.path, 'utf8');
+      const entry = baselineEntrySchema.parse(JSON.parse(raw));
+      const loaded = await loadBaseline(snapshot, repo.headSha);
+      expect(entry.sourceCommitSha).toBe(repo.headSha);
+      expect(loaded.entry?.inputId).toBe(entry.inputId);
+      expect(loaded.entry?.report.metadata.inputId).toBe(report.metadata.inputId);
+    } finally {
+      await repo.cleanup();
+    }
   });
 });
 
@@ -94,7 +105,7 @@ describe('integration: trend corrupt line errors', () => {
 describe('integration: diff report contract', () => {
   it('returns versioned DiffReport shape from compareSignalChanges path', () => {
     const diff = diffReportSchema.parse({
-      schemaVersion: 1,
+      schemaVersion: 2,
       current: {
         metadata: {
           schemaVersion: 1,
@@ -114,25 +125,6 @@ describe('integration: diff report contract', () => {
         interventions: [],
         capabilities: [],
       },
-      base: {
-        metadata: {
-          schemaVersion: 1,
-          assessmentContractVersion: 2,
-          generatedAt: '2026-01-01T00:00:00.000Z',
-          inputId: 'b',
-          repositoryPath: '/tmp',
-          analyzers: [],
-          truncated: false,
-          unevaluatedAreas: [],
-        },
-        repository: { regressionRiskScore: 5, confidence: 1, disclaimer: 'd' },
-        axes: [],
-        clusters: [],
-        evidence: [],
-        semanticFindings: [],
-        interventions: [],
-        capabilities: [],
-      },
       comparison: {
         compatible: false,
         reason: 'assessment contract mismatch',
@@ -144,7 +136,10 @@ describe('integration: diff report contract', () => {
       },
     });
     expect(diff.comparison.compatible).toBe(false);
+    expect(diff.base).toBeUndefined();
     expect(diff.comparison.riskDelta).toBeUndefined();
+    expect(formatDiffConsoleReport(diff)).not.toContain('Base score:');
+    expect(formatDiffMarkdownReport(diff)).not.toContain('Base score:');
   });
 });
 
@@ -152,7 +147,7 @@ describe('integration: github outputs', () => {
   it('writes summary and annotations with diagnostic evidence', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'reg-score-gh-'));
     const diff = diffReportSchema.parse({
-      schemaVersion: 1,
+      schemaVersion: 2,
       current: {
         metadata: {
           schemaVersion: 1,
@@ -202,6 +197,7 @@ describe('integration: github outputs', () => {
       comparison: {
         compatible: true,
         riskDelta: 30,
+        baselineId: 'b',
         changedFiles: ['src/a.ts'],
         blastRadius: [{
           changedFile: 'src/a.ts',
@@ -229,8 +225,12 @@ describe('integration: github outputs', () => {
     await writeGitHubAnnotationsFile(diff, annotationsPath);
     const summary = await readFile(summaryPath, 'utf8');
     const annotations = await readFile(annotationsPath, 'utf8');
+    expect(summary).toContain('Baseline: b');
+    expect(summary).toContain('Base score: 50');
     expect(summary).toContain('cycle detected');
     expect(annotations).toContain('::error file=src/a.ts');
+    expect(formatDiffConsoleReport(diff)).toContain('Base score: 50');
+    expect(formatDiffMarkdownReport(diff)).toContain('Base score: 50');
     await rm(dir, { recursive: true, force: true });
   });
 });

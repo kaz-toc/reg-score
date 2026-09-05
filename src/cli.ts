@@ -3,7 +3,8 @@ import { Command } from 'commander';
 import path from 'node:path';
 
 import { createRepositorySnapshot } from './intake/snapshot.js';
-import { appendTrend, runDiagnosis, saveBaseline } from './pipeline/diagnose.js';
+import { appendTrend, runDiagnosis } from './pipeline/diagnose.js';
+import { saveBaseline } from './persistence/baseline-store.js';
 import { runDiffDiagnosis } from './commands/diff.js';
 import { loadPolicy, evaluatePolicy } from './operations/policy.js';
 import { loadCalibration, summarizeCalibration } from './calibration/dataset.js';

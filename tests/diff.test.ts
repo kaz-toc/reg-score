@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { compareSignalChanges, computeBlastRadius } from '../src/commands/diff.js';
+import { compareSignalChanges } from '../src/comparison/compare.js';
+import { computeBlastRadius } from '../src/commands/diff.js';
 import type { DiagnosisReport } from '../src/schema/report.v1.js';
 
 function minimalReport(evidenceIds: Array<{ id: string; severity: 'low' | 'medium' | 'high' }>): DiagnosisReport {

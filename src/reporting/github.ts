@@ -38,9 +38,13 @@ export async function writeGitHubSummaryFile(diff: DiffReport, outputPath: strin
     '# reg-score PR Advisory',
     '',
     `Score: ${diff.current.repository.regressionRiskScore}`,
-    diff.comparison.compatible
-      ? `Delta vs base: ${diff.comparison.riskDelta ?? 0}`
-      : `Contract incompatible — ${diff.comparison.reason ?? 'delta suppressed'}`,
+    ...(diff.comparison.compatible && diff.base
+      ? [
+          `Baseline: ${diff.comparison.baselineId ?? diff.base.metadata.inputId}`,
+          `Base score: ${diff.base.repository.regressionRiskScore}`,
+          `Delta vs base: ${diff.comparison.riskDelta ?? 0}`,
+        ]
+      : [`Contract incompatible — ${diff.comparison.reason ?? 'delta suppressed'}`]),
     '',
     '## Changed files',
     ...(diff.comparison.changedFiles.length > 0 ? diff.comparison.changedFiles.map((f) => `- ${f}`) : ['- (none detected)']),

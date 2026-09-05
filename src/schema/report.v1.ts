@@ -2,7 +2,8 @@ import { z } from 'zod';
 
 export const ASSESSMENT_CONTRACT_VERSION = 2;
 export const REPORT_SCHEMA_VERSION = 1;
-export const DIFF_SCHEMA_VERSION = 1;
+export const BASELINE_SCHEMA_VERSION = 2;
+export const DIFF_SCHEMA_VERSION = 2;
 
 export const riskAxisIdSchema = z.enum([
   'structural-fragility',
@@ -244,17 +245,19 @@ export const diffReportSchema = z
   .object({
     schemaVersion: z.literal(DIFF_SCHEMA_VERSION),
     current: diagnosisReportSchema,
-    base: diagnosisReportSchema,
+    base: diagnosisReportSchema.optional(),
     comparison: diffComparisonSchema,
   })
   .strict();
 
 export const baselineEntrySchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(BASELINE_SCHEMA_VERSION),
     inputId: z.string(),
     generatedAt: z.string(),
     assessmentContractVersion: z.literal(ASSESSMENT_CONTRACT_VERSION),
+    sourceCommitSha: z.string().optional(),
+    redactionPolicyFingerprint: z.string(),
     report: diagnosisReportSchema,
   })
   .strict();

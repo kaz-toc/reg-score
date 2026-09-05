@@ -10,7 +10,8 @@ import { computeBlastRadius } from '../src/commands/diff.js';
 import { runDiffDiagnosis } from '../src/commands/diff.js';
 import { diffReportSchema } from '../src/schema/report.v1.js';
 import { createRepositorySnapshot } from '../src/intake/snapshot.js';
-import { saveBaseline, runDiagnosis } from '../src/pipeline/diagnose.js';
+import { saveBaseline } from '../src/persistence/baseline-store.js';
+import { runDiagnosis } from '../src/pipeline/diagnose.js';
 import { IntakeError } from '../src/shared/errors.js';
 import { redactDiffReport } from '../src/shared/redaction.js';
 import { ConfigError } from '../src/shared/errors.js';
@@ -42,7 +43,7 @@ describe('review fixes', () => {
 
   it('redacts diff comparison paths and signal identifiers', async () => {
     const diff = diffReportSchema.parse({
-      schemaVersion: 1,
+      schemaVersion: 2,
       current: {
         metadata: {
           schemaVersion: 1,
@@ -127,10 +128,12 @@ describe('review fixes', () => {
   it('compares against stored baseline when manifest exists', async () => {
     const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
     try {
+      await execFileAsync('git', ['checkout', '--detach', repo.baseSha], { cwd: repo.path });
       const snapshot = await createRepositorySnapshot(repo.path);
       const report = await runDiagnosis(snapshot);
       const baseline = await saveBaseline(snapshot, report);
       try {
+        await execFileAsync('git', ['checkout', '--detach', repo.headSha], { cwd: repo.path });
         const diff = await runDiffDiagnosis(repo.path, repo.baseSha);
         expect(diff.comparison.compatible).toBe(true);
         expect(diff.comparison.baselineId).toBeDefined();

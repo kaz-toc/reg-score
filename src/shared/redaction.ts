@@ -1,4 +1,11 @@
+import { createHash } from 'node:crypto';
+
 import type { DiffReport, DiagnosisReport, EvidenceChange, BlastRadiusEntry } from '../schema/report.v1.js';
+
+export function redactionPolicyFingerprint(redactPaths: string[]): string {
+  const normalized = [...new Set(redactPaths)].sort();
+  return createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+}
 
 function redactString(value: string, redactPaths: string[]): string {
   if (redactPaths.length === 0) {
@@ -105,7 +112,7 @@ export function redactDiffReport(diff: DiffReport, redactPaths: string[]): DiffR
   return {
     ...diff,
     current: redactReport(diff.current, redactPaths),
-    base: redactReport(diff.base, redactPaths),
+    base: diff.base ? redactReport(diff.base, redactPaths) : undefined,
     comparison: {
       ...diff.comparison,
       reason: redactOptionalString(diff.comparison.reason, redactPaths),

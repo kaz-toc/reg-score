@@ -69,6 +69,11 @@ export function formatDiffConsoleReport(diff: DiffReport): string {
   if (diff.comparison.reason) {
     lines.push(`  reason: ${diff.comparison.reason}`);
   }
+  if (diff.comparison.compatible && diff.base) {
+    lines.push(`  baseline: ${diff.comparison.baselineId ?? diff.base.metadata.inputId}`);
+    lines.push(`  Base score: ${diff.base.repository.regressionRiskScore}`);
+    lines.push(`  risk delta: ${diff.comparison.riskDelta ?? 0}`);
+  }
   lines.push(`  changed files: ${diff.comparison.changedFiles.join(', ') || 'none'}`);
   lines.push(`  new signals: ${diff.comparison.newSignals.length}`);
   lines.push(`  worsened signals: ${diff.comparison.worsenedSignals.length}`);
@@ -151,6 +156,11 @@ export function formatDiffMarkdownReport(diff: DiffReport): string {
   lines.push(`- Compatible: ${diff.comparison.compatible}`);
   if (diff.comparison.reason) {
     lines.push(`- Reason: ${diff.comparison.reason}`);
+  }
+  if (diff.comparison.compatible && diff.base) {
+    lines.push(`- Baseline: ${diff.comparison.baselineId ?? diff.base.metadata.inputId}`);
+    lines.push(`- Base score: ${diff.base.repository.regressionRiskScore}`);
+    lines.push(`- Risk delta: ${diff.comparison.riskDelta ?? 0}`);
   }
   lines.push(`- Changed files: ${diff.comparison.changedFiles.join(', ') || 'none'}`);
   lines.push('');

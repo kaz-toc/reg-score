@@ -1,15 +1,15 @@
-import { lstat, readdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { DiagnosisReport } from '../schema/report.v1.js';
-import { baselineEntrySchema, diagnosisReportSchema } from '../schema/report.v1.js';
+import { diagnosisReportSchema } from '../schema/report.v1.js';
 import type { RepositorySnapshot } from '../intake/snapshot.js';
 import { assessRisk } from '../assessment/risk.js';
 import { buildInterventions } from '../recommendation/rules.js';
 import { getDefaultPlugins, extractEvidenceWithPlugins, selectPlugins } from '../plugins/analyzer.js';
 import { runSemanticAnalysis } from '../semantic/provider.js';
 import { DefaultGitProvider } from '../adapters/git-provider.js';
-import { atomicAppendLine, atomicWriteFile } from '../shared/atomic-write.js';
+import { atomicAppendLine } from '../shared/atomic-write.js';
 import { redactReport, redactStringList } from '../shared/redaction.js';
 import { loadPolicy } from '../operations/policy.js';
 import { trendEntrySchema } from '../schema/report.v1.js';
@@ -52,75 +52,6 @@ async function applyRetention(
     retainBaselineEntries(resolvedBaselineDir, cutoff),
     retainTrendEntries(path.join(resolvedTrendDir, 'history.jsonl'), cutoff),
   ]);
-}
-
-export async function saveBaseline(snapshot: RepositorySnapshot, report: DiagnosisReport): Promise<PersistenceResult> {
-  const policy = await loadPolicy(snapshot.repositoryPath, snapshot.config.policyFile);
-  const retention = await applyRetention(
-    snapshot.repositoryPath,
-    policy.retentionDays,
-    snapshot.config.baselineDir,
-    snapshot.config.trendDir,
-  );
-
-  const baselineDir = await resolveSafeStorageDir(snapshot.repositoryPath, snapshot.config.baselineDir, 'baselineDir', true);
-  const redacted = redactReport(report, policy.redactPaths);
-  const entry = baselineEntrySchema.parse({
-    schemaVersion: 1,
-    inputId: redacted.metadata.inputId,
-    generatedAt: redacted.metadata.generatedAt,
-    assessmentContractVersion: redacted.metadata.assessmentContractVersion,
-    report: redacted,
-  });
-  const baselinePath = path.join(baselineDir, `${entry.inputId}.json`);
-  await atomicWriteFile(baselinePath, JSON.stringify(entry, null, 2));
-  return { path: baselinePath, retention };
-}
-
-export async function loadBaseline(
-  snapshot: RepositorySnapshot,
-  inputId?: string,
-): Promise<{ entry: ReturnType<typeof baselineEntrySchema.parse>; path: string } | null> {
-  let baselineDir: string;
-  try {
-    baselineDir = await resolveSafeStorageDir(snapshot.repositoryPath, snapshot.config.baselineDir, 'baselineDir', false);
-  } catch (error) {
-    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
-      return null;
-    }
-    throw error;
-  }
-  const entries = await readdir(baselineDir).catch(() => [] as string[]);
-  const candidates = entries.filter((entry) => entry.endsWith('.json'));
-
-  let best: { entry: ReturnType<typeof baselineEntrySchema.parse>; path: string } | null = null;
-
-  for (const fileName of candidates) {
-    const baselinePath = path.join(baselineDir, fileName);
-    try {
-      const fileStat = await lstat(baselinePath);
-      if (!fileStat.isFile()) {
-        continue;
-      }
-      const raw = await readFile(baselinePath, 'utf8');
-      const entry = baselineEntrySchema.parse(JSON.parse(raw));
-      if (inputId && entry.inputId !== inputId) {
-        continue;
-      }
-      if (
-        !best ||
-        entry.generatedAt.localeCompare(best.entry.generatedAt) > 0 ||
-        (entry.generatedAt === best.entry.generatedAt &&
-          entry.assessmentContractVersion >= best.entry.assessmentContractVersion)
-      ) {
-        best = { entry, path: baselinePath };
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  return best;
 }
 
 export async function appendTrend(snapshot: RepositorySnapshot, report: DiagnosisReport): Promise<PersistenceResult> {

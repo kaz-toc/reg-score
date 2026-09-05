@@ -10,6 +10,26 @@ import { resolveSafeStorageDir } from '../src/persistence/storage-boundary.js';
 import { ConfigError, RegScoreError } from '../src/shared/errors.js';
 
 describe('persistence storage boundary', () => {
+  it('rejects an intermediate storage component symlink without touching its target', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'reg-score-storage-'));
+    const repositoryPath = path.join(root, 'repository');
+    const outsideDir = path.join(root, 'outside');
+    const outsideBaselineDir = path.join(outsideDir, 'baselines');
+    const victimPath = path.join(outsideBaselineDir, 'victim.txt');
+    await mkdir(repositoryPath, { recursive: true });
+    await mkdir(outsideBaselineDir, { recursive: true });
+    await writeFile(victimPath, 'keep me');
+    await symlink(outsideDir, path.join(repositoryPath, '.reg-score'));
+
+    try {
+      await expect(resolveSafeStorageDir(repositoryPath, '.reg-score/baselines', 'baselineDir', false))
+        .rejects.toBeInstanceOf(ConfigError);
+      expect(await readFile(victimPath, 'utf8')).toBe('keep me');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('rejects a storage directory symlink without touching its target', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'reg-score-storage-'));
     const repositoryPath = path.join(root, 'repository');

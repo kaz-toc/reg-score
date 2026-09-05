@@ -7,6 +7,7 @@ const SOURCE_FILE_PATTERN = /\.(ts|tsx|js|jsx|mjs|cjs|py|go)$/;
 
 export type GitProvider = {
   listChangedFiles(repositoryPath: string, baseRef: string): Promise<string[]>;
+  resolveRef(repositoryPath: string, ref: string): Promise<string>;
   resolveHeadCommit(repositoryPath: string): Promise<string | undefined>;
 };
 
@@ -55,6 +56,13 @@ export class DefaultGitProvider implements GitProvider {
     }
 
     return [...collected].sort();
+  }
+
+  async resolveRef(repositoryPath: string, ref: string): Promise<string> {
+    const { stdout } = await execFileAsync('git', ['rev-parse', '--verify', `${ref}^{commit}`], {
+      cwd: repositoryPath,
+    });
+    return stdout.trim();
   }
 
   async resolveHeadCommit(repositoryPath: string): Promise<string | undefined> {
