@@ -148,7 +148,7 @@ describe('commit-bound baseline comparison', () => {
       await mkdir(path.join(repo.path, '.reg-score'), { recursive: true });
       await writeFile(
         path.join(repo.path, '.reg-score', 'policy.json'),
-        JSON.stringify({ schemaVersion: 1, redactPaths: ['secret-repo'] }),
+        JSON.stringify({ schemaVersion: 1, redactPaths: ['secret-repo'], requiredCalibrationConditions: [] }),
       );
       const snapshot = await createRepositorySnapshot(repo.path);
       await saveBaseline(snapshot, await runDiagnosis(snapshot));
@@ -174,13 +174,13 @@ describe('commit-bound baseline comparison', () => {
       const policyPath = path.join(repo.path, '.reg-score', 'policy.json');
       await writeFile(
         policyPath,
-        JSON.stringify({ schemaVersion: 1, redactPaths: ['secret', 'secret-repo'] }),
+        JSON.stringify({ schemaVersion: 1, redactPaths: ['secret', 'secret-repo'], requiredCalibrationConditions: [] }),
       );
       const snapshot = await createRepositorySnapshot(repo.path);
       await saveBaseline(snapshot, await runDiagnosis(snapshot));
       await writeFile(
         policyPath,
-        JSON.stringify({ schemaVersion: 1, redactPaths: ['secret-repo', 'secret', 'secret-repo'] }),
+        JSON.stringify({ schemaVersion: 1, redactPaths: ['secret-repo', 'secret', 'secret-repo'], requiredCalibrationConditions: [] }),
       );
 
       const diff = await runDiffDiagnosis(repo.path, repo.headSha);

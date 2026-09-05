@@ -160,7 +160,11 @@ program
     }
     const report = await runDiagnosis(snapshot);
     const golden = await runGoldenAssessmentRegression();
-    const calibration = await loadCalibration(snapshot.repositoryPath, golden.passed);
+    const calibration = await loadCalibration(
+      snapshot.repositoryPath,
+      golden.passed,
+      policy.requiredCalibrationConditions,
+    );
     const evaluation = evaluatePolicy(
       report.repository.regressionRiskScore,
       report.repository.confidence,
@@ -186,8 +190,14 @@ program
       }
       return;
     }
+    const snapshot = await createRepositorySnapshot(path.resolve(repoPath));
+    const policy = await loadPolicy(snapshot.repositoryPath, snapshot.config.policyFile);
     const golden = await runGoldenAssessmentRegression();
-    const calibration = await loadCalibration(path.resolve(repoPath), golden.passed);
+    const calibration = await loadCalibration(
+      snapshot.repositoryPath,
+      golden.passed,
+      policy.requiredCalibrationConditions,
+    );
     process.stdout.write(`${summarizeCalibration(calibration)}\n`);
   });
 

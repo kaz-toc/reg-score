@@ -44,7 +44,7 @@ describe('policy redaction and gate eligibility', () => {
         hasRankingQuality: true,
         hasExplanationUsefulness: true,
         goldenRegressionPassed: true,
-      }),
+      }, [], []),
     ).toBe(true);
 
     expect(
@@ -56,7 +56,7 @@ describe('policy redaction and gate eligibility', () => {
         hasRankingQuality: true,
         hasExplanationUsefulness: true,
         goldenRegressionPassed: true,
-      }),
+      }, [], []),
     ).toBe(false);
   });
 });

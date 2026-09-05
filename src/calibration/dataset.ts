@@ -6,6 +6,10 @@ import { z } from 'zod';
 import { ConfigError } from '../shared/errors.js';
 import { deriveGateEligible } from '../operations/policy.js';
 
+const calibrationConditionsSchema = z
+  .array(z.string().trim().min(1))
+  .refine((values) => new Set(values).size === values.length, 'conditions must be unique');
+
 export const calibrationRecordSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -25,7 +29,8 @@ export const calibrationDatasetSchema = z
     schemaVersion: z.literal(1),
     records: z.array(calibrationRecordSchema),
     gateEligible: z.boolean().optional(),
-    gateConditions: z.array(z.string()),
+    gateConditions: calibrationConditionsSchema,
+    satisfiedConditions: calibrationConditionsSchema,
   })
   .strict();
 
@@ -38,7 +43,11 @@ const DEFAULT_GATE_CONDITIONS = [
   'ranking quality and explanation usefulness recorded',
 ];
 
-export async function loadCalibration(repositoryPath: string, goldenRegressionPassed = false): Promise<CalibrationDataset & { gateEligible: boolean }> {
+export async function loadCalibration(
+  repositoryPath: string,
+  goldenRegressionPassed: boolean,
+  requiredConditions: string[],
+): Promise<CalibrationDataset & { gateEligible: boolean }> {
   const calibrationPath = path.join(repositoryPath, '.reg-score', 'calibration.json');
   try {
     await access(calibrationPath);
@@ -48,6 +57,7 @@ export async function loadCalibration(repositoryPath: string, goldenRegressionPa
       records: [],
       gateEligible: false,
       gateConditions: DEFAULT_GATE_CONDITIONS,
+      satisfiedConditions: [],
     };
   }
 
@@ -60,15 +70,19 @@ export async function loadCalibration(repositoryPath: string, goldenRegressionPa
     const hasRankingQuality = dataset.records.some((record) => record.rankingQuality !== undefined);
     const hasExplanationUsefulness = dataset.records.some((record) => record.explanationUsefulness !== undefined);
 
-    const gateEligible = deriveGateEligible({
-      calibrationPresent: dataset.records.length > 0,
-      minSamplesPerBand,
-      hasFalsePositiveRate,
-      hasMissRate,
-      hasRankingQuality,
-      hasExplanationUsefulness,
-      goldenRegressionPassed,
-    });
+    const gateEligible = deriveGateEligible(
+      {
+        calibrationPresent: dataset.records.length > 0,
+        minSamplesPerBand,
+        hasFalsePositiveRate,
+        hasMissRate,
+        hasRankingQuality,
+        hasExplanationUsefulness,
+        goldenRegressionPassed,
+      },
+      requiredConditions,
+      dataset.satisfiedConditions,
+    );
 
     return { ...dataset, gateEligible };
   } catch (error) {
