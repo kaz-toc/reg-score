@@ -1,7 +1,9 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdtemp, mkdir, readFile, realpath, rm, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 
 import { describe, expect, it } from 'vitest';
 
@@ -9,8 +11,8 @@ import { writeGitHubAnnotationsFile, writeGitHubSummaryFile } from '../src/repor
 import { diffReportSchema } from '../src/schema/report.v1.js';
 import { createRepositorySnapshot } from '../src/intake/snapshot.js';
 import { loadBaseline, saveBaseline } from '../src/persistence/baseline-store.js';
+import { appendTrend, loadTrendHistory } from '../src/persistence/trend-store.js';
 import { runDiagnosis } from '../src/pipeline/diagnose.js';
-import { loadTrendHistory } from '../src/operations/trend.js';
 import {
   formatConsoleReport,
   formatDiffConsoleReport,
@@ -23,6 +25,7 @@ import { createGitRepository } from './helpers/git-repository.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const fixturesRoot = path.join(root, 'fixtures');
+const execFileAsync = promisify(execFile);
 
 describe('integration: multi-language scan', () => {
   it('negotiates capabilities per detected language', async () => {
@@ -110,6 +113,85 @@ describe('integration: trend corrupt line errors', () => {
     );
     await expect(loadTrendHistory(trendPath)).rejects.toThrow(/line 2/);
     await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe('integration: trend persistence boundary', () => {
+  it('returns the owned trend path and structured retention audit', async () => {
+    const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
+    try {
+      const snapshot = await createRepositorySnapshot(repo.path);
+      const report = await runDiagnosis(snapshot);
+      const trendPath = path.join(await realpath(repo.path), '.reg-score', 'trends', 'history.jsonl');
+      await mkdir(path.dirname(trendPath), { recursive: true });
+      await writeFile(trendPath, `${JSON.stringify({
+        schemaVersion: 1,
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        inputId: 'expired',
+        score: 1,
+        confidence: 1,
+        contractVersion: 2,
+        topClusters: [],
+      })}\n`);
+
+      const result = await appendTrend(snapshot, report);
+
+      expect(result.path).toBe(trendPath);
+      expect(result.retention).toEqual(expect.arrayContaining([
+        { storage: 'trend', reason: 'expired', removedEntries: 1 },
+      ]));
+      expect((await loadTrendHistory(result.path)).map((entry) => entry.inputId)).toEqual([
+        report.metadata.inputId,
+      ]);
+    } finally {
+      await repo.cleanup();
+    }
+  });
+});
+
+describe('integration: CLI retention audits', () => {
+  it('formats every persistence audit to stderr', async () => {
+    const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
+    try {
+      const storageRoot = path.join(repo.path, '.reg-score');
+      const baselineDir = path.join(storageRoot, 'baselines');
+      const trendDir = path.join(storageRoot, 'trends');
+      await mkdir(baselineDir, { recursive: true });
+      await mkdir(trendDir, { recursive: true });
+      const expiredBaselinePath = path.join(baselineDir, 'expired.json');
+      await writeFile(expiredBaselinePath, '{}');
+      await utimes(expiredBaselinePath, new Date('2026-01-01T00:00:00.000Z'), new Date('2026-01-01T00:00:00.000Z'));
+      await writeFile(path.join(trendDir, 'history.jsonl'), `${JSON.stringify({
+        schemaVersion: 1,
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        inputId: 'expired',
+        score: 1,
+        confidence: 1,
+        contractVersion: 2,
+        topClusters: [],
+      })}\n`);
+
+      const cliPath = path.join(root, '..', 'src', 'cli.ts');
+      const tsxPath = path.join(root, '..', 'node_modules', 'tsx', 'dist', 'cli.mjs');
+      const { stderr } = await execFileAsync(process.execPath, [
+        tsxPath,
+        cliPath,
+        'scan',
+        repo.path,
+        '--format',
+        'json',
+        '--save-baseline',
+        '--record-trend',
+      ]);
+      const auditLines = stderr.trim().split('\n').filter((line) => line.startsWith('retention '));
+
+      expect(auditLines).toEqual([
+        'retention storage=baseline reason=expired removed=1',
+        'retention storage=trend reason=expired removed=1',
+      ]);
+    } finally {
+      await repo.cleanup();
+    }
   });
 });
 

@@ -13,8 +13,8 @@ import type { BaselineEntry, DiagnosisReport } from '../schema/report.v1.js';
 import { atomicWriteFile } from '../shared/atomic-write.js';
 import { ConfigError } from '../shared/errors.js';
 import { redactReport, redactionPolicyFingerprint } from '../shared/redaction.js';
-import type { PersistenceResult, RetentionAudit } from './retention.js';
-import { retainBaselineEntries, retainTrendEntries } from './retention.js';
+import type { PersistenceResult } from './retention.js';
+import { retainBaselineEntries } from './retention.js';
 import { resolveSafeStorageDir } from './storage-boundary.js';
 
 export type BaselineSelection = {
@@ -41,31 +41,11 @@ function versionLabel(value: unknown): string {
   return typeof value === 'number' || typeof value === 'string' ? `v${value}` : 'missing';
 }
 
-async function applyRetention(
-  repositoryPath: string,
-  retentionDays: number,
-  baselineDir: string,
-  trendDir: string,
-): Promise<RetentionAudit[]> {
-  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
-  const resolvedBaselineDir = await resolveSafeStorageDir(repositoryPath, baselineDir, 'baselineDir', true);
-  const resolvedTrendDir = await resolveSafeStorageDir(repositoryPath, trendDir, 'trendDir', true);
-  return Promise.all([
-    retainBaselineEntries(resolvedBaselineDir, cutoff),
-    retainTrendEntries(path.join(resolvedTrendDir, 'history.jsonl'), cutoff),
-  ]);
-}
-
 export async function saveBaseline(snapshot: RepositorySnapshot, report: DiagnosisReport): Promise<PersistenceResult> {
   const policy = await loadPolicy(snapshot.repositoryPath, snapshot.config.policyFile);
-  const retention = await applyRetention(
-    snapshot.repositoryPath,
-    policy.retentionDays,
-    snapshot.config.baselineDir,
-    snapshot.config.trendDir,
-  );
-
   const baselineDir = await resolveSafeStorageDir(snapshot.repositoryPath, snapshot.config.baselineDir, 'baselineDir', true);
+  const cutoff = new Date(Date.now() - policy.retentionDays * 24 * 60 * 60 * 1000);
+  const retention = [await retainBaselineEntries(baselineDir, cutoff)];
   const sourceCommitSha = snapshot.gitAvailable
     ? await new DefaultGitProvider().resolveRef(snapshot.repositoryPath, 'HEAD')
     : undefined;

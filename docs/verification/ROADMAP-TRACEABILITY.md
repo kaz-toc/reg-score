@@ -21,3 +21,28 @@
 | 成功条件 8: redaction / retention / gate | `tests/redaction.test.ts`, `tests/phases.test.ts` |
 | 成功条件 9: 全出力に根拠 | `tests/scan.test.ts`, `tests/integration.test.ts` |
 | 成功条件 10: validate + 境界テスト | `npm run validate`, `tests/integration.test.ts`, `docs/verification/BOUNDARY-MATRIX.md` |
+
+## PR #2 focused verification
+
+| 検証対象 | 正確な focused test / command |
+|---|---|
+| 物理保存先 containment | `npm test -- tests/persistence.test.ts -t "rejects an intermediate storage component symlink without touching its target"`; `npm test -- tests/persistence.test.ts -t "rejects a storage directory symlink without touching its target"`; `npm test -- tests/persistence.test.ts -t "rejects a trend history symlink without reading its target"` |
+| commit-bound comparison | `npm test -- tests/comparison.test.ts -t "suppresses every baseline-derived field when the saved commit does not match --base"`; `npm test -- tests/comparison.test.ts -t "derives the displayed base and risk delta from the one commit-matched baseline"`; `npm test -- tests/comparison.test.ts -t "preserves baselines for different commits that have the same analysis input ID"` |
+| redaction comparison | `npm test -- tests/comparison.test.ts -t "compares a redacted current copy without mutating the raw current report"`; `npm test -- tests/comparison.test.ts -t "keeps reordered overlapping redaction policies compatible without false signal changes"` |
+| semantic injection | `npm test -- tests/phases.test.ts -t "reports a configured but uninjected semantic provider as unavailable"`; `npm test -- tests/phases.test.ts -t "returns findings from the actual provider supplied by an injected semantic factory"` |
+| runtime capability | `npm test -- tests/phases.test.ts -t "marks git churn unevaluated when a TypeScript snapshot has no Git history"`; `npm test -- tests/assessment.test.ts -t "does not let unsupported git churn evidence override capability negotiation"`; `npm test -- tests/integration.test.ts -t "marks change volatility unevaluated for a non-Git repository snapshot"` |
+| custom calibration conditions | `npm test -- tests/phases.test.ts -t "requires each policy-defined calibration condition for gate eligibility"`; `npm test -- tests/calibration.test.ts -t "rejects blank or duplicate persisted calibration conditions"` |
+| shallow-checkout independence | `npm test -- tests/review-fixes.test.ts -t "creates two commits without seed files"`; a local `file://` depth-1 clone followed by `npm ci` and `npm run validate` |
+
+## Persistence rollback procedure
+
+Task 6 changes TypeScript module ownership and CLI audit output only. Baseline schema v2 and trend schema v1 stay unchanged, so an on-disk migration rollback is N/A: there is no migration to reverse and the pre-Task-6 build reads the same persisted entries.
+
+Operational rollback is:
+
+1. Stop concurrent `reg-score` persistence commands.
+2. Reinstall or rebuild the immediately preceding known-good revision (`ac5308e`).
+3. Re-run the baseline round-trip and trend parsing focused tests before resuming writers.
+4. If expired entries must be recovered, restore `.reg-score/baselines/*.json` and `.reg-score/trends/history.jsonl` from the pre-deployment repository backup. Verify `.reg-score` and its storage directories are not symbolic links before restoring; do not copy through a symlink.
+
+Retention intentionally removes expired entries and is not itself reversible. Operational deployment must therefore back up retained persistence files before enabling the new build when expired history may still be needed.

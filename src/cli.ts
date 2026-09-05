@@ -3,14 +3,15 @@ import { Command } from 'commander';
 import path from 'node:path';
 
 import { createRepositorySnapshot } from './intake/snapshot.js';
-import { appendTrend, runDiagnosis } from './pipeline/diagnose.js';
+import { runDiagnosis } from './pipeline/diagnose.js';
 import { saveBaseline } from './persistence/baseline-store.js';
+import { appendTrend, loadTrendHistory } from './persistence/trend-store.js';
 import { runDiffDiagnosis } from './commands/diff.js';
 import { loadPolicy, evaluatePolicy } from './operations/policy.js';
 import { loadCalibration, summarizeCalibration } from './calibration/dataset.js';
 import { runGoldenAssessmentRegression } from './calibration/golden-regression.js';
 import { DefaultReporterAdapter } from './adapters/reporter.js';
-import { analyzeTrend, loadTrendHistory, rankInvestmentPriorities } from './operations/trend.js';
+import { analyzeTrend, rankInvestmentPriorities } from './operations/trend.js';
 import {
   GoStubAnalyzerPlugin,
   PythonStubAnalyzerPlugin,
@@ -20,6 +21,7 @@ import {
 import { RegScoreError } from './shared/errors.js';
 import { redactDiffReport, redactReport } from './shared/redaction.js';
 import { writeGitHubAnnotationsFile, writeGitHubSummaryFile } from './reporting/github.js';
+import type { RetentionAudit } from './persistence/retention.js';
 import { resolveSafeStorageDir } from './persistence/storage-boundary.js';
 
 const VALID_FORMATS = new Set(['console', 'markdown', 'json']);
@@ -34,6 +36,14 @@ function parseFormat(value: string): 'console' | 'markdown' | 'json' {
     throw new RegScoreError(`invalid format: ${value}`);
   }
   return value as 'console' | 'markdown' | 'json';
+}
+
+function writeRetentionAudits(audits: RetentionAudit[]): void {
+  for (const audit of audits) {
+    process.stderr.write(
+      `retention storage=${audit.storage} reason=${audit.reason} removed=${audit.removedEntries}\n`,
+    );
+  }
 }
 
 program
@@ -53,9 +63,11 @@ program
     if (options.saveBaseline) {
       const baseline = await saveBaseline(snapshot, report);
       process.stderr.write(`baseline saved: ${baseline.path}\n`);
+      writeRetentionAudits(baseline.retention);
     }
     if (options.recordTrend) {
-      await appendTrend(snapshot, report);
+      const trend = await appendTrend(snapshot, report);
+      writeRetentionAudits(trend.retention);
     }
 
     process.stdout.write(output);
@@ -107,6 +119,7 @@ program
     if (options.save) {
       const report = await runDiagnosis(snapshot);
       const baseline = await saveBaseline(snapshot, report);
+      writeRetentionAudits(baseline.retention);
       process.stdout.write(`${baseline.path}\n`);
       return;
     }

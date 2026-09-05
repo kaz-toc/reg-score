@@ -1,8 +1,4 @@
-import { lstat, readFile } from 'node:fs/promises';
-import path from 'node:path';
-
 import type { DiagnosisReport, Intervention, TrendEntry } from '../schema/report.v1.js';
-import { trendEntrySchema } from '../schema/report.v1.js';
 import { RegScoreError } from '../shared/errors.js';
 
 export type ContributingChange = {
@@ -43,38 +39,6 @@ export function rankInvestmentPriorities(report: DiagnosisReport): InvestmentPri
       };
     })
     .sort((a, b) => b.urgency - a.urgency);
-}
-
-export async function loadTrendHistory(trendPath: string): Promise<TrendEntry[]> {
-  let raw: string;
-  try {
-    const historyStat = await lstat(trendPath);
-    if (historyStat.isSymbolicLink()) {
-      throw new RegScoreError(`refusing to read trend history through symbolic link: ${trendPath}`);
-    }
-    raw = await readFile(trendPath, 'utf8');
-  } catch (error) {
-    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
-      return [];
-    }
-    throw error;
-  }
-
-  const entries: TrendEntry[] = [];
-  const lines = raw.split('\n');
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index]?.trim();
-    if (!line) {
-      continue;
-    }
-    try {
-      entries.push(trendEntrySchema.parse(JSON.parse(line)));
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      throw new RegScoreError(`trend history parse error at line ${index + 1}: ${reason}`);
-    }
-  }
-  return entries;
 }
 
 export function analyzeTrend(entries: TrendEntry[]): TrendAnalysis {
@@ -137,8 +101,4 @@ export function analyzeTrend(entries: TrendEntry[]): TrendAnalysis {
     contributingClusterIds,
     contributingChanges,
   };
-}
-
-export function trendPathFor(repositoryPath: string, trendDir: string): string {
-  return path.join(repositoryPath, trendDir, 'history.jsonl');
 }

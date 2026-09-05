@@ -4,9 +4,9 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { loadTrendHistory } from '../src/operations/trend.js';
 import { retainBaselineEntries, retainTrendEntries } from '../src/persistence/retention.js';
 import { resolveSafeStorageDir } from '../src/persistence/storage-boundary.js';
+import { loadTrendHistory } from '../src/persistence/trend-store.js';
 import { ConfigError, RegScoreError } from '../src/shared/errors.js';
 
 describe('persistence storage boundary', () => {
