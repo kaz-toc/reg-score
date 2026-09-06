@@ -6,7 +6,13 @@ reg-score は、コードベースが将来の変更でデグレを起こしや�
 
 ## 現在の状態
 
-Phase 0–6 の成果物を実装済み。`reg-score scan` / `diff` / `baseline` / `trend` / `policy` / `calibration` / `plugins` コマンドが利用可能。最初の公開リリース境界（Phase 0 + Phase 1）は満たしている。
+Phase 0–1 MVP（schema、決定論 scan、golden fixtures）と Phase 2–3 の部分実装（intervention、diff/baseline、GitHub advisory）が利用可能です。Phase 4–6 は CLI・スタブ・最小監査にとどまります。`reg-score scan` / `diff` / `baseline` / `trend` / `policy` / `calibration` / `plugins` コマンドは read-only 診断として動作します。
+
+- **TypeScript / JavaScript** — 主要対象言語
+- **Python / Go** — experimental stub（large-file 等の限定シグナルのみ）
+- **LLM semantic 軸** — provider 未接続のため Semantic Ambiguity は常に unevaluated
+
+最初の公開リリース境界（Phase 0 + Phase 1）は満たしています。
 
 ## 目指す診断
 

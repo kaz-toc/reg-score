@@ -311,3 +311,34 @@ describe('assessment contract', () => {
     expect(diagnosisReportSchema.safeParse(report).success).toBe(true);
   });
 });
+
+describe('assessment output labels', () => {
+  it('distinguishes unevaluated axes from evaluated axes with no signals', () => {
+    const nonGitSnapshot = { ...baseSnapshot, gitAvailable: false };
+    const capabilities = negotiateCapabilities(
+      {
+        ...nonGitSnapshot,
+        files: [{ relativePath: 'src/a.ts', absolutePath: '/tmp/repo/src/a.ts', extension: '.ts', content: '', contentHash: 'a', nonBlankLines: 1 }],
+      } as never,
+      [new TypeScriptAnalyzerPlugin()],
+    ).capabilities;
+
+    const report = assessRisk({
+      snapshot: nonGitSnapshot as never,
+      evidence: [],
+      semanticFindings: [],
+      capabilities,
+      analyzers: ['typescript-javascript-v1'],
+      selectedAnalyzers: 1,
+      successfulAnalyzers: 1,
+      semanticResolution: { status: 'unavailable', reason: 'LLM not configured' },
+    });
+
+    const consoleOut = formatConsoleReport(report);
+    const markdownOut = formatMarkdownReport(report);
+    expect(consoleOut).toContain('Change Volatility: unevaluated (excluded from aggregate)');
+    expect(consoleOut).toContain('Structural Fragility: 0 (no signals detected)');
+    expect(markdownOut).toContain('Score: unevaluated (excluded from aggregate)');
+    expect(markdownOut).toContain('Score: 0 (no signals detected)');
+  });
+});

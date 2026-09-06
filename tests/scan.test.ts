@@ -8,7 +8,7 @@ import { runDiagnosis } from '../src/pipeline/diagnose.js';
 import { diagnosisReportSchema } from '../src/schema/report.v1.js';
 import { extractDeterministicEvidence } from '../src/evidence/deterministic.js';
 import { buildInterventions } from '../src/recommendation/rules.js';
-import { formatMarkdownReport } from '../src/reporting/format.js';
+import { formatMarkdownReport, formatConsoleReport } from '../src/reporting/format.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const fixturesRoot = path.join(root, 'fixtures');
@@ -57,5 +57,16 @@ describe('scan pipeline', () => {
     const markdown = formatMarkdownReport(report);
     expect(markdown).toContain('# reg-score Diagnosis Report');
     expect(markdown).toContain('Regression Risk Score');
+    expect(markdown).toContain('## Evidence');
+    expect(markdown).toContain('## Semantic Findings');
+  });
+
+  it('renders independent evidence sections in console output', async () => {
+    const snapshot = await createRepositorySnapshot(path.join(fixturesRoot, 'fragile-cart'));
+    const report = await runDiagnosis(snapshot);
+    const consoleOut = formatConsoleReport(report);
+    expect(consoleOut).toContain('Evidence:');
+    expect(consoleOut).toContain('Semantic findings:');
+    expect(consoleOut).toContain('none (axis unevaluated)');
   });
 });

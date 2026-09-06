@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { compareSignalChanges } from '../src/comparison/compare.js';
 import { computeBlastRadius } from '../src/commands/diff.js';
+import { formatDiffConsoleReport, formatDiffMarkdownReport } from '../src/reporting/format.js';
+import { diffReportSchema } from '../src/schema/report.v1.js';
 import type { DiagnosisReport } from '../src/schema/report.v1.js';
 
 function minimalReport(evidenceIds: Array<{ id: string; severity: 'low' | 'medium' | 'high' }>): DiagnosisReport {
@@ -56,5 +58,77 @@ describe('diff diagnostics', () => {
     expect(radius[0]?.directDependents).toContain('src/b.ts');
     expect(radius[0]?.transitiveDependents).toContain('src/b.ts');
     expect(radius[0]?.paths.length).toBeGreaterThan(0);
+  });
+
+  it('renders blast radius and signal changes in human-readable diff output', () => {
+    const base = minimalReport([]);
+    const current = {
+      ...minimalReport([{ id: 'a', severity: 'high' }]),
+      repository: { ...minimalReport([]).repository, regressionRiskScore: 35 },
+    };
+    const diff = diffReportSchema.parse({
+      schemaVersion: 2,
+      current,
+      base,
+      comparison: {
+        compatible: true,
+        riskDelta: 25,
+        baselineId: base.metadata.inputId,
+        changedFiles: ['src/a.ts'],
+        blastRadius: [{
+          changedFile: 'src/a.ts',
+          directDependents: ['src/b.ts'],
+          directDependencies: ['src/c.ts'],
+          transitiveDependents: ['src/b.ts'],
+          transitiveDependencies: ['src/c.ts'],
+          paths: [{ from: 'src/b.ts', to: 'src/a.ts' }],
+        }],
+        newSignals: [{
+          evidenceId: 'evidence:dep-cycle:a',
+          signalId: 'dep-cycle',
+          path: undefined,
+          currentSeverity: 'high',
+          message: 'a',
+        }],
+        worsenedSignals: [],
+        improvedSignals: [],
+      },
+    });
+
+    const consoleOut = formatDiffConsoleReport(diff);
+    const markdownOut = formatDiffMarkdownReport(diff);
+    expect(consoleOut).toContain('Blast radius:');
+    expect(consoleOut).toContain('direct dependents: src/b.ts');
+    expect(consoleOut).toContain('[new] [high] dep-cycle repo: a');
+    expect(markdownOut).toContain('### Blast radius');
+    expect(markdownOut).toContain('Direct dependencies: src/c.ts');
+    expect(markdownOut).toContain('[new]');
+  });
+
+  it('still reports changed files and blast radius when comparison is incompatible', () => {
+    const diff = diffReportSchema.parse({
+      schemaVersion: 2,
+      current: minimalReport([{ id: 'a', severity: 'low' }]),
+      comparison: {
+        compatible: false,
+        reason: 'assessment contract mismatch',
+        changedFiles: ['src/a.ts'],
+        blastRadius: [{
+          changedFile: 'src/a.ts',
+          directDependents: [],
+          directDependencies: [],
+          transitiveDependents: [],
+          transitiveDependencies: [],
+          paths: [],
+        }],
+        newSignals: [],
+        worsenedSignals: [],
+        improvedSignals: [],
+      },
+    });
+
+    expect(formatDiffConsoleReport(diff)).toContain('changed files: src/a.ts');
+    expect(formatDiffConsoleReport(diff)).toContain('Blast radius:');
+    expect(formatDiffMarkdownReport(diff)).toContain('### Blast radius');
   });
 });

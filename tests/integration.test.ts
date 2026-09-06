@@ -232,7 +232,11 @@ describe('integration: output evidence traceability', () => {
 
     expect(consoleOut).toContain('mechanism:');
     expect(consoleOut).toContain('evidence:');
+    expect(consoleOut).toContain('Evidence:');
+    expect(consoleOut).toContain('Semantic findings:');
     expect(markdownOut).toContain('- Evidence:');
+    expect(markdownOut).toContain('## Evidence');
+    expect(markdownOut).toContain('## Semantic Findings');
     expect(jsonOut).toContain('"evidenceId"');
     expect(jsonOut).toContain('"capabilities"');
   });
@@ -548,9 +552,14 @@ describe('integration: github outputs', () => {
     expect(summary).toContain('Baseline: b');
     expect(summary).toContain('Base score: 50');
     expect(summary).toContain('cycle detected');
+    expect(summary).toContain('Direct dependencies:');
     expect(annotations).toContain('::error file=src/a.ts');
     expect(formatDiffConsoleReport(diff)).toContain('Base score: 50');
+    expect(formatDiffConsoleReport(diff)).toContain('Blast radius:');
+    expect(formatDiffConsoleReport(diff)).toContain('Signal changes:');
     expect(formatDiffMarkdownReport(diff)).toContain('Base score: 50');
+    expect(formatDiffMarkdownReport(diff)).toContain('### Blast radius');
+    expect(formatDiffMarkdownReport(diff)).toContain('[new]');
     await rm(dir, { recursive: true, force: true });
   });
 });

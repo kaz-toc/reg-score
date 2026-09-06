@@ -53,7 +53,9 @@ export async function writeGitHubSummaryFile(diff: DiffReport, outputPath: strin
     ...diff.comparison.blastRadius.flatMap((entry) => [
       `### ${entry.changedFile}`,
       `- Direct dependents: ${entry.directDependents.join(', ') || 'none'}`,
+      `- Direct dependencies: ${entry.directDependencies.join(', ') || 'none'}`,
       `- Transitive dependents: ${entry.transitiveDependents.join(', ') || 'none'}`,
+      `- Transitive dependencies: ${entry.transitiveDependencies.join(', ') || 'none'}`,
       `- Paths: ${entry.paths.map((p) => `${p.from}->${p.to}`).join('; ') || 'none'}`,
     ]),
     '',
