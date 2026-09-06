@@ -38,9 +38,9 @@ export const configSchema = z
         maxFiles: 20,
         sendScope: 'cluster-context',
       }),
-    baselineDir: z.string().default('.reg-score/baselines'),
-    trendDir: z.string().default('.reg-score/trends'),
-    policyFile: z.string().default('.reg-score/policy.json'),
+    baselineDir: z.string().default('.r3-doctor/baselines'),
+    trendDir: z.string().default('.r3-doctor/trends'),
+    policyFile: z.string().default('.r3-doctor/policy.json'),
     units: z
       .array(
         z
@@ -55,14 +55,14 @@ export const configSchema = z
   })
   .strict();
 
-export type RegScoreConfig = z.infer<typeof configSchema>;
+export type R3DoctorConfig = z.infer<typeof configSchema>;
 
-export const defaultConfig: RegScoreConfig = configSchema.parse({
+export const defaultConfig: R3DoctorConfig = configSchema.parse({
   schemaVersion: 1,
 });
 
-export function normalizeConfig(config: RegScoreConfig): RegScoreConfig {
+export function normalizeConfig(config: R3DoctorConfig): R3DoctorConfig {
   return configSchema.parse(config);
 }
 
-export type LlmConfig = RegScoreConfig['llm'];
+export type LlmConfig = R3DoctorConfig['llm'];

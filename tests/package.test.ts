@@ -15,7 +15,7 @@ describe('package build artifacts', () => {
     'cleans removed modules during prepack and emits the current runtime manifest',
     async () => {
     const stalePath = path.join(projectRoot, 'dist', 'shared', 'storage-paths.js');
-    const cachePath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-pack-cache-'));
+    const cachePath = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-pack-cache-'));
     await mkdir(path.dirname(stalePath), { recursive: true });
     await writeFile(stalePath, 'export const stale = true;\n');
     const npmCli = process.env.npm_execpath;
@@ -47,7 +47,7 @@ describe('package build artifacts', () => {
       expect(packedPaths.some((entry) => entry.startsWith('tests/'))).toBe(false);
       expect(packedPaths.some((entry) => entry.startsWith('harness/'))).toBe(false);
       expect(packedPaths.some((entry) => entry.startsWith('scripts/'))).toBe(false);
-      expect(packageManifest.bin?.['reg-score']).toBe('./dist/cli.js');
+      expect(packageManifest.bin?.['r3-doctor']).toBe('./dist/cli.js');
       expect(packageManifest.private).toBeUndefined();
       expect(packageManifest.files).toEqual(['dist', 'README.md', 'LICENSE']);
     } finally {

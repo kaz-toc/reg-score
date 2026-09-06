@@ -400,7 +400,7 @@ export const diffReportSchema = z
 export const baselineEntrySchema = z
   .object({
     schemaVersion: z.literal(BASELINE_SCHEMA_VERSION),
-    kind: z.literal('reg-score/baseline'),
+    kind: z.literal('r3-doctor/baseline'),
     inputId: z.string(),
     generatedAt: z.string(),
     assessmentContractVersion: z.literal(ASSESSMENT_CONTRACT_VERSION),

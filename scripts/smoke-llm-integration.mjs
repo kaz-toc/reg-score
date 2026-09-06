@@ -17,8 +17,8 @@ if (!existsSync(cli)) {
   fail('dist/cli.js not found — run npm run build first');
 }
 
-if (process.env.REG_SCORE_LLM_INTEGRATION !== '1') {
-  fail('set REG_SCORE_LLM_INTEGRATION=1 to run the billable codex-acp smoke test');
+if (process.env.R3_DOCTOR_LLM_INTEGRATION !== '1') {
+  fail('set R3_DOCTOR_LLM_INTEGRATION=1 to run the billable codex-acp smoke test');
 }
 
 if (

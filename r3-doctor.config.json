@@ -12,9 +12,9 @@
     "provider": "none",
     "maxFiles": 20
   },
-  "baselineDir": ".reg-score/baselines",
-  "trendDir": ".reg-score/trends",
-  "policyFile": ".reg-score/policy.json",
+  "baselineDir": ".r3-doctor/baselines",
+  "trendDir": ".r3-doctor/trends",
+  "policyFile": ".r3-doctor/policy.json",
   "units": [
     { "id": "core", "roots": ["src/evidence", "src/assessment"] },
     { "id": "cli", "roots": ["src/commands"] }

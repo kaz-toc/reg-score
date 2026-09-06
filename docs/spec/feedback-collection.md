@@ -25,4 +25,4 @@
 | `helpful` | 打ち手が有効だった |
 | `not-actionable` | 根拠は正しいが実行可能でなかった |
 
-保存先: `.reg-score/feedback/*.json`（gitignore 推奨）
+保存先: `.r3-doctor/feedback/*.json`（gitignore 推奨）

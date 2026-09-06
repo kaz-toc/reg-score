@@ -41,10 +41,10 @@ describe('calibration quality', () => {
   });
 
   it('returns and summarizes missing required custom conditions', async () => {
-    const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-calibration-conditions-'));
+    const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-calibration-conditions-'));
     try {
-      await mkdir(path.join(repositoryPath, '.reg-score'), { recursive: true });
-      await writeFile(path.join(repositoryPath, '.reg-score', 'calibration.json'), JSON.stringify({
+      await mkdir(path.join(repositoryPath, '.r3-doctor'), { recursive: true });
+      await writeFile(path.join(repositoryPath, '.r3-doctor', 'calibration.json'), JSON.stringify({
         schemaVersion: 1,
         records: [{
           schemaVersion: 1,

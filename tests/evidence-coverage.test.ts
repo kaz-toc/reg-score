@@ -9,7 +9,7 @@ import { extractDeterministicEvidence } from '../src/evidence/deterministic.js';
 
 describe('test coverage detection', () => {
   it('does not flag missing-test-pair when tests import the source module', async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), 'reg-score-coverage-'));
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-coverage-'));
     try {
       await mkdir(path.join(dir, 'src'), { recursive: true });
       await mkdir(path.join(dir, 'tests'), { recursive: true });
@@ -31,7 +31,7 @@ describe('test coverage detection', () => {
   });
 
   it('flags missing-test-pair when no colocated or import-based test exists', async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), 'reg-score-coverage-'));
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-coverage-'));
     try {
       await mkdir(path.join(dir, 'src'), { recursive: true });
       await writeFile(path.join(dir, 'src', 'orphan.ts'), 'export const orphan = 1;\n');

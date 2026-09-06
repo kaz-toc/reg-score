@@ -76,7 +76,7 @@ Input ID は次を正規順序で SHA-256 へ入力して生成する。
 
 ### 設定エラー
 
-`reg-score.config.json` が存在しない場合だけ既定値を使用する。存在するが読めない、JSON不正、schema不正の場合は対象pathと原因を含む設定エラーにする。
+`r3-doctor.config.json` が存在しない場合だけ既定値を使用する。存在するが読めない、JSON不正、schema不正の場合は対象pathと原因を含む設定エラーにする。
 
 ## Analyzer と Capability Negotiation
 
@@ -172,7 +172,7 @@ Scan Report schemaは Repository、Axes、Clusters、Evidence、Semantic Finding
 
 ## Diff Report
 
-`reg-score diff --format json` は Scan Report ではなく次のversioned Diff Reportを返す。
+`r3-doctor diff --format json` は Scan Report ではなく次のversioned Diff Reportを返す。
 
 ```ts
 type DiffReport = {

@@ -21,12 +21,12 @@ async function git(cwd: string, args: string[]): Promise<string> {
 }
 
 export async function createGitRepository(files: Record<string, string> = {}): Promise<TestGitRepository> {
-  const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-git-test-'));
+  const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-git-test-'));
   await git(repositoryPath, ['init']);
-  await git(repositoryPath, ['config', 'user.email', 'reg-score@example.test']);
-  await git(repositoryPath, ['config', 'user.name', 'reg-score test']);
+  await git(repositoryPath, ['config', 'user.email', 'r3-doctor@example.test']);
+  await git(repositoryPath, ['config', 'user.name', 'r3-doctor test']);
   const initialFiles = {
-    '.gitignore': '.reg-score/baselines/\n.reg-score/trends/\n',
+    '.gitignore': '.r3-doctor/baselines/\n.r3-doctor/trends/\n',
     ...files,
   };
   for (const [relativePath, content] of Object.entries(initialFiles)) {

@@ -78,7 +78,7 @@ export async function saveBaseline(snapshot: RepositorySnapshot, report: Diagnos
   const redacted = redactReport(report, policy.redactPaths);
   const entry = baselineEntrySchema.parse({
     schemaVersion: BASELINE_SCHEMA_VERSION,
-    kind: 'reg-score/baseline',
+    kind: 'r3-doctor/baseline',
     inputId: redacted.metadata.inputId,
     generatedAt: redacted.metadata.generatedAt,
     assessmentContractVersion: redacted.metadata.assessmentContractVersion,

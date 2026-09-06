@@ -25,7 +25,7 @@ type SemanticProvider = {
 
 `implementationVersion`（現行 `1.0.0`）は同じ provider 名の実装リリースを識別する不変値である。プロンプト契約またはパース契約を変え得る変更時は必ず更新し、ベースライン互換性 fingerprint に含める。
 
-### Config (`reg-score.config.json`)
+### Config (`r3-doctor.config.json`)
 
 ```json
 {
@@ -43,8 +43,8 @@ type SemanticProvider = {
 
 ### CLI utilities
 
-- `reg-score llm inspect [--provider codex]` — spawn + initialize のみ。失敗時は install hint を stderr に出力。
-- `reg-score scan . --dry-run-semantic` — ACP を呼ばずプロンプトを stdout に出力。
+- `r3-doctor llm inspect [--provider codex]` — spawn + initialize のみ。失敗時は install hint を stderr に出力。
+- `r3-doctor scan . --dry-run-semantic` — ACP を呼ばずプロンプトを stdout に出力。
 
 ## Git Provider (`src/adapters/git-provider.ts`)
 

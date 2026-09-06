@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { access, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
-import type { RegScoreConfig } from '../shared/config.js';
+import type { R3DoctorConfig } from '../shared/config.js';
 import { configSchema, defaultConfig, normalizeConfig } from '../shared/config.js';
 import { ConfigError, IntakeError } from '../shared/errors.js';
 import { ASSESSMENT_CONTRACT_VERSION } from '../schema/report.v1.js';
@@ -37,7 +37,7 @@ export type RepositorySnapshot = {
   analysisContextFingerprint: string;
   truncated: boolean;
   intakeIssues: IntakeIssue[];
-  config: RegScoreConfig;
+  config: R3DoctorConfig;
 };
 
 function countNonBlankLines(content: string): number {
@@ -160,7 +160,7 @@ async function walkFiles(
   return false;
 }
 
-export function computeInputId(unitId: string | undefined, files: SourceFile[], config: RegScoreConfig): string {
+export function computeInputId(unitId: string | undefined, files: SourceFile[], config: R3DoctorConfig): string {
   const hash = createHash('sha256');
   hash.update(String(ASSESSMENT_CONTRACT_VERSION));
   hash.update(JSON.stringify(normalizeConfig(config)));
@@ -172,8 +172,8 @@ export function computeInputId(unitId: string | undefined, files: SourceFile[], 
   return hash.digest('hex').slice(0, 16);
 }
 
-export async function loadConfig(repositoryPath: string): Promise<RegScoreConfig> {
-  const configPath = path.join(repositoryPath, 'reg-score.config.json');
+export async function loadConfig(repositoryPath: string): Promise<R3DoctorConfig> {
+  const configPath = path.join(repositoryPath, 'r3-doctor.config.json');
   try {
     await access(configPath);
   } catch {

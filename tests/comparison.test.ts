@@ -122,7 +122,7 @@ describe('pure comparison', () => {
     const current = minimalReport('current');
     const baseline: BaselineEntry = {
       schemaVersion: 3,
-      kind: 'reg-score/baseline',
+      kind: 'r3-doctor/baseline',
       inputId: 'baseline',
       generatedAt: '2026-01-01T00:00:00.000Z',
       assessmentContractVersion: 2,
@@ -153,7 +153,7 @@ describe('pure comparison', () => {
     const current = minimalReport('current');
     const baseline = {
       schemaVersion: 3,
-      kind: 'reg-score/baseline',
+      kind: 'r3-doctor/baseline',
       inputId: 'baseline',
       generatedAt: '2026-01-01T00:00:00.000Z',
       assessmentContractVersion: 2,
@@ -203,7 +203,7 @@ describe('commit-bound baseline comparison', () => {
 
   it('rejects a unit-scoped baseline for whole-repository comparison at the same commit', async () => {
     const repo = await createGitRepository({
-      'reg-score.config.json': JSON.stringify({
+      'r3-doctor.config.json': JSON.stringify({
         schemaVersion: 1,
         units: [{ id: 'core', roots: ['src/core'] }],
       }),
@@ -225,7 +225,7 @@ describe('commit-bound baseline comparison', () => {
   });
 
   it('rejects a same-commit baseline when score-affecting configuration changes', async () => {
-    const configPath = 'reg-score.config.json';
+    const configPath = 'r3-doctor.config.json';
     const repo = await createGitRepository({
       [configPath]: JSON.stringify({ schemaVersion: 1, maxFileLines: 100 }),
       'src/a.ts': 'export const a = 1;\nexport const b = 2;\n',
@@ -250,7 +250,7 @@ describe('commit-bound baseline comparison', () => {
   });
 
   it('rejects a same-commit baseline when llm configuration changes', async () => {
-    const configPath = 'reg-score.config.json';
+    const configPath = 'r3-doctor.config.json';
     const repo = await createGitRepository({
       [configPath]: JSON.stringify({ schemaVersion: 1, llm: { enabled: false, provider: 'none' } }),
       'src/a.ts': 'export const a = 1;\n',
@@ -293,7 +293,7 @@ describe('commit-bound baseline comparison', () => {
 
   it('refuses to bind an ignored analyzed source file to HEAD', async () => {
     const repo = await createGitRepository({
-      '.gitignore': '.reg-score/baselines/\n.reg-score/trends/\nsrc/generated.ts\n',
+      '.gitignore': '.r3-doctor/baselines/\n.r3-doctor/trends/\nsrc/generated.ts\n',
       'src/a.ts': 'export const a = 1;\n',
       'src/generated.ts': 'export const generated = 1;\n',
     });
@@ -408,7 +408,7 @@ describe('commit-bound baseline comparison', () => {
 
   it('rejects the same semantic provider name when its implementation version changes', async () => {
     const repo = await createGitRepository({
-      'reg-score.config.json': JSON.stringify({
+      'r3-doctor.config.json': JSON.stringify({
         schemaVersion: 1,
         llm: { enabled: true, provider: 'codex', maxFiles: 1, sendScope: 'all', maxPromptBytes: 80_000 },
       }),
@@ -524,7 +524,7 @@ describe('commit-bound baseline comparison', () => {
 
   it('compares a redacted current copy without mutating the raw current report', async () => {
     const repo = await createGitRepository({
-      '.reg-score/policy.json': JSON.stringify({
+      '.r3-doctor/policy.json': JSON.stringify({
         schemaVersion: 1,
         redactPaths: ['secret-repo'],
         requiredCalibrationConditions: [],
@@ -551,7 +551,7 @@ describe('commit-bound baseline comparison', () => {
 
   it('keeps reordered overlapping redaction policies compatible without false signal changes', async () => {
     const repo = await createGitRepository({
-      '.reg-score/policy.json': JSON.stringify({
+      '.r3-doctor/policy.json': JSON.stringify({
         schemaVersion: 1,
         redactPaths: ['secret', 'secret-repo'],
         requiredCalibrationConditions: [],
@@ -559,7 +559,7 @@ describe('commit-bound baseline comparison', () => {
       'secret-repo/a.ts': 'export const untested = 1;\n',
     });
     try {
-      const policyPath = path.join(repo.path, '.reg-score', 'policy.json');
+      const policyPath = path.join(repo.path, '.r3-doctor', 'policy.json');
       const snapshot = await createRepositorySnapshot(repo.path);
       await saveBaseline(snapshot, await runDiagnosis(snapshot));
       await writeFile(
@@ -583,13 +583,13 @@ describe('commit-bound baseline comparison', () => {
     try {
       const snapshot = await createRepositorySnapshot(repo.path);
       const report = await runDiagnosis(snapshot);
-      const baselineDir = path.join(repo.path, '.reg-score', 'baselines');
+      const baselineDir = path.join(repo.path, '.r3-doctor', 'baselines');
       await mkdir(baselineDir, { recursive: true });
       await writeFile(
         path.join(baselineDir, 'older-compatible.json'),
         JSON.stringify({
           schemaVersion: 3,
-          kind: 'reg-score/baseline',
+          kind: 'r3-doctor/baseline',
           inputId: 'older-compatible',
           generatedAt: '2026-01-01T00:00:00.000Z',
           assessmentContractVersion: 2,
@@ -627,7 +627,7 @@ describe('commit-bound baseline comparison', () => {
     try {
       const snapshot = await createRepositorySnapshot(repo.path);
       const report = await runDiagnosis(snapshot);
-      const baselineDir = path.join(repo.path, '.reg-score', 'baselines');
+      const baselineDir = path.join(repo.path, '.r3-doctor', 'baselines');
       await mkdir(baselineDir, { recursive: true });
       await writeFile(
         path.join(baselineDir, 'unrelated-old.json'),
@@ -658,7 +658,7 @@ describe('commit-bound baseline comparison', () => {
     try {
       const snapshot = await createRepositorySnapshot(repo.path);
       const report = await runDiagnosis(snapshot);
-      const baselineDir = path.join(repo.path, '.reg-score', 'baselines');
+      const baselineDir = path.join(repo.path, '.r3-doctor', 'baselines');
       await mkdir(baselineDir, { recursive: true });
       await writeFile(
         path.join(baselineDir, 'old.json'),
@@ -690,13 +690,13 @@ describe('commit-bound baseline comparison', () => {
       const report = await runDiagnosis(snapshot);
       const oldContractReport = JSON.parse(JSON.stringify(report)) as Record<string, unknown>;
       (oldContractReport.metadata as Record<string, unknown>).assessmentContractVersion = 1;
-      const baselineDir = path.join(repo.path, '.reg-score', 'baselines');
+      const baselineDir = path.join(repo.path, '.r3-doctor', 'baselines');
       await mkdir(baselineDir, { recursive: true });
       await writeFile(
         path.join(baselineDir, 'old-contract.json'),
         JSON.stringify({
           schemaVersion: 3,
-          kind: 'reg-score/baseline',
+          kind: 'r3-doctor/baseline',
           inputId: report.metadata.inputId,
           generatedAt: report.metadata.generatedAt,
           assessmentContractVersion: 1,
@@ -721,7 +721,7 @@ describe('commit-bound baseline comparison', () => {
   it('raises ConfigError for malformed baseline JSON', async () => {
     const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
     try {
-      const baselineDir = path.join(repo.path, '.reg-score', 'baselines');
+      const baselineDir = path.join(repo.path, '.r3-doctor', 'baselines');
       await mkdir(baselineDir, { recursive: true });
       await writeFile(path.join(baselineDir, 'broken.json'), '{broken');
 

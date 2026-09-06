@@ -1,5 +1,5 @@
 import type { DiagnosisReport, Intervention, TrendEntry } from '../schema/report.v1.js';
-import { RegScoreError } from '../shared/errors.js';
+import { R3DoctorError } from '../shared/errors.js';
 
 export type ContributingChange = {
   generatedAt: string;
@@ -48,7 +48,7 @@ export function analyzeTrend(entries: TrendEntry[]): TrendAnalysis {
 
   const contractVersions = new Set(entries.map((entry) => entry.contractVersion));
   if (contractVersions.size > 1) {
-    throw new RegScoreError('trend entries span multiple assessment contract versions');
+    throw new R3DoctorError('trend entries span multiple assessment contract versions');
   }
 
   const sorted = [...entries].sort((a, b) => a.generatedAt.localeCompare(b.generatedAt));

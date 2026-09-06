@@ -11,13 +11,13 @@ function annotationLines(diff: DiffReport): string[] {
     }
     const evidence = diff.current.evidence.find((item) => item.evidenceId === change.evidenceId);
     const level = evidence?.severity === 'high' ? 'error' : 'warning';
-    const message = `reg-score: ${change.message} (${change.signalId})`;
+    const message = `r3-doctor: ${change.message} (${change.signalId})`;
     lines.push(`::${level} file=${change.path},line=1::${message}`);
   }
 
   if (!diff.comparison.compatible) {
     lines.push(
-      `::notice title=reg-score::${diff.comparison.reason ?? 'Assessment contract mismatch — compare scores cautiously'}`,
+      `::notice title=r3-doctor::${diff.comparison.reason ?? 'Assessment contract mismatch — compare scores cautiously'}`,
     );
   }
 
@@ -35,7 +35,7 @@ export async function writeGitHubAnnotationsFile(diff: DiffReport, outputPath: s
 
 export async function writeGitHubSummaryFile(diff: DiffReport, outputPath: string): Promise<void> {
   const lines = [
-    '# reg-score PR Advisory',
+    '# r3-doctor PR Advisory',
     '',
     `Score: ${diff.current.repository.regressionRiskScore}`,
     ...(diff.comparison.compatible && diff.base

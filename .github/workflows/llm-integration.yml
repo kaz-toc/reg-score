@@ -12,11 +12,11 @@ permissions:
 
 jobs:
   llm-integration:
-    if: vars.REG_SCORE_LLM_INTEGRATION == '1'
+    if: vars.R3_DOCTOR_LLM_INTEGRATION == '1'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      REG_SCORE_LLM_INTEGRATION: '1'
+      R3_DOCTOR_LLM_INTEGRATION: '1'
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
     steps:

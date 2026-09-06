@@ -24,7 +24,7 @@ const execFileAsync = promisify(execFile);
 
 describe('review fixes', () => {
   it('rejects storage directories that escape repository root', async () => {
-    const repository = await mkdtemp(path.join(os.tmpdir(), 'reg-score-storage-root-'));
+    const repository = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-storage-root-'));
     try {
       await expect(resolveSafeStorageDir(repository, '..', 'baselineDir', false)).rejects.toBeInstanceOf(ConfigError);
     } finally {
@@ -123,7 +123,7 @@ describe('review fixes', () => {
   });
 
   it('rejects missing repository roots with intake error', async () => {
-    await expect(createRepositorySnapshot('/path/that/does/not/exist/reg-score')).rejects.toBeInstanceOf(IntakeError);
+    await expect(createRepositorySnapshot('/path/that/does/not/exist/r3-doctor')).rejects.toBeInstanceOf(IntakeError);
   });
 
   it('suppresses score comparison when no stored baseline exists', async () => {

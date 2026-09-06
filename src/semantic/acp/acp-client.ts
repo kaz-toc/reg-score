@@ -137,7 +137,7 @@ function fail<T>(reason: LlmFailureReason): LlmResult<T> {
 
 function buildClientApp() {
   return acp
-    .client({ name: 'reg-score' })
+    .client({ name: 'r3-doctor' })
     .onRequest(
       acp.methods.client.session.requestPermission,
       async () => ({ outcome: { outcome: 'cancelled' } }),
@@ -146,7 +146,7 @@ function buildClientApp() {
       outcome: { outcome: 'cancelled' },
     }))
     .onRequest('cursor/create_plan', (params: unknown) => params, async () => ({
-      outcome: { outcome: 'rejected', reason: 'reg-score semantic analysis is non-interactive' },
+      outcome: { outcome: 'rejected', reason: 'r3-doctor semantic analysis is non-interactive' },
     }));
 }
 
