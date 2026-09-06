@@ -7,7 +7,7 @@ import { loadPolicy } from '../operations/policy.js';
 import type { DiagnosisReport, TrendEntry } from '../schema/report.v1.js';
 import { trendEntrySchema } from '../schema/report.v1.js';
 import { atomicAppendLine } from '../shared/atomic-write.js';
-import { RegScoreError } from '../shared/errors.js';
+import { R3DoctorError } from '../shared/errors.js';
 import { redactReport, redactStringList } from '../shared/redaction.js';
 import type { PersistenceResult } from './retention.js';
 import { retainTrendEntries } from './retention.js';
@@ -22,7 +22,7 @@ export async function loadTrendHistory(trendPath: string): Promise<TrendEntry[]>
   try {
     const historyStat = await lstat(trendPath);
     if (historyStat.isSymbolicLink()) {
-      throw new RegScoreError(`refusing to read trend history through symbolic link: ${trendPath}`);
+      throw new R3DoctorError(`refusing to read trend history through symbolic link: ${trendPath}`);
     }
     raw = await readFile(trendPath, 'utf8');
   } catch (error) {
@@ -43,7 +43,7 @@ export async function loadTrendHistory(trendPath: string): Promise<TrendEntry[]>
       entries.push(trendEntrySchema.parse(JSON.parse(line)));
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      throw new RegScoreError(`trend history parse error at line ${index + 1}: ${reason}`);
+      throw new R3DoctorError(`trend history parse error at line ${index + 1}: ${reason}`);
     }
   }
   return entries;

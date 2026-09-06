@@ -77,7 +77,7 @@ describe('policy redaction and gate eligibility', () => {
   });
 
   it('keeps raw token-shaped entity IDs distinct from generated pseudonyms', () => {
-    const pseudonym = createHash('sha256').update('reg-score-redaction-v1\0secret').digest('hex');
+    const pseudonym = createHash('sha256').update('r3-doctor-redaction-v1\0secret').digest('hex');
     const report = {
       metadata: {
         schemaVersion: 1 as const,

@@ -55,11 +55,11 @@ describe('integration: semantic unevaluated', () => {
 
 describe('integration: semantic provider injection', () => {
   it('routes an injected semantic provider through runDiagnosis', async () => {
-    const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-semantic-pipeline-'));
+    const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-semantic-pipeline-'));
     try {
       await mkdir(path.join(repositoryPath, 'src'), { recursive: true });
       await writeFile(path.join(repositoryPath, 'src', 'a.ts'), 'export const a = 1;\n');
-      await writeFile(path.join(repositoryPath, 'reg-score.config.json'), JSON.stringify({
+      await writeFile(path.join(repositoryPath, 'r3-doctor.config.json'), JSON.stringify({
         schemaVersion: 1,
         llm: { enabled: true, provider: 'codex', maxFiles: 1, sendScope: 'all', maxPromptBytes: 80_000 },
       }));
@@ -100,11 +100,11 @@ describe('integration: semantic provider injection', () => {
 
 describe('integration: ACP semantic provider', () => {
   it('evaluates semantic ambiguity through the default factory with fake ACP spawn', async () => {
-    const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-acp-semantic-'));
+    const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-acp-semantic-'));
     try {
       await mkdir(path.join(repositoryPath, 'src'), { recursive: true });
       await writeFile(path.join(repositoryPath, 'src', 'a.ts'), 'export const ambiguous = 1;\n');
-      await writeFile(path.join(repositoryPath, 'reg-score.config.json'), JSON.stringify({
+      await writeFile(path.join(repositoryPath, 'r3-doctor.config.json'), JSON.stringify({
         schemaVersion: 1,
         llm: { enabled: true, provider: 'copilot', maxFiles: 5, sendScope: 'all', maxPromptBytes: 80_000 },
       }));
@@ -146,7 +146,7 @@ describe('integration: Git-dependent capability unevaluated', () => {
 
   it('does not import churn evidence from outside the analyzed unit scope', async () => {
     const repo = await createGitRepository({
-      'reg-score.config.json': JSON.stringify({
+      'r3-doctor.config.json': JSON.stringify({
         schemaVersion: 1,
         churnDays: 3650,
         units: [{ id: 'app', roots: ['packages/app'] }],
@@ -176,7 +176,7 @@ describe('integration: Git-dependent capability unevaluated', () => {
       'fixtures/stable/src/a.ts': 'export const a = 1;\n',
       'fixtures/stable/src/__tests__/a.test.ts': 'export const tested = true;\n',
     });
-    const standalonePath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-standalone-fixture-'));
+    const standalonePath = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-standalone-fixture-'));
     try {
       const fixturePath = path.join(repo.path, 'fixtures', 'stable');
       await mkdir(path.join(standalonePath, 'src', '__tests__'), { recursive: true });
@@ -221,7 +221,7 @@ describe('integration: Git-dependent capability unevaluated', () => {
   });
 
   it('retains unsupported churn evidence for audit without recommending from it', async () => {
-    const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-capability-pipeline-'));
+    const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-capability-pipeline-'));
     try {
       await mkdir(path.join(repositoryPath, 'src'), { recursive: true });
       await writeFile(path.join(repositoryPath, 'src', 'a.ts'), 'export const a = 1;\n');
@@ -302,8 +302,8 @@ describe('integration: baseline atomic round-trip', () => {
 
 describe('integration: trend corrupt line errors', () => {
   it('reports line number when trend history is corrupt', async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), 'reg-score-trend-'));
-    const trendDir = path.join(dir, '.reg-score', 'trends');
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-trend-'));
+    const trendDir = path.join(dir, '.r3-doctor', 'trends');
     await mkdir(trendDir, { recursive: true });
     const trendPath = path.join(trendDir, 'history.jsonl');
     await writeFile(
@@ -329,7 +329,7 @@ describe('integration: trend persistence boundary', () => {
     try {
       const snapshot = await createRepositorySnapshot(repo.path);
       const report = await runDiagnosis(snapshot);
-      const trendPath = path.join(await realpath(repo.path), '.reg-score', 'trends', 'history.jsonl');
+      const trendPath = path.join(await realpath(repo.path), '.r3-doctor', 'trends', 'history.jsonl');
       await mkdir(path.dirname(trendPath), { recursive: true });
       await writeFile(trendPath, `${JSON.stringify({
         schemaVersion: 1,
@@ -360,7 +360,7 @@ describe('integration: CLI retention audits', () => {
   it('formats every persistence audit to stderr', async () => {
     const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
     try {
-      const storageRoot = path.join(repo.path, '.reg-score');
+      const storageRoot = path.join(repo.path, '.r3-doctor');
       const trendDir = path.join(storageRoot, 'trends');
       const snapshot = await createRepositorySnapshot(repo.path);
       const seededBaseline = await saveBaseline(snapshot, await runDiagnosis(snapshot));
@@ -425,17 +425,17 @@ describe('integration: CLI retention audits', () => {
 
 describe('integration: CLI calibration conditions', () => {
   it('displays missing custom conditions in calibration and policy output', async () => {
-    const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-calibration-cli-'));
+    const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-calibration-cli-'));
     try {
-      await mkdir(path.join(repositoryPath, '.reg-score'), { recursive: true });
+      await mkdir(path.join(repositoryPath, '.r3-doctor'), { recursive: true });
       await mkdir(path.join(repositoryPath, 'src'), { recursive: true });
       await writeFile(path.join(repositoryPath, 'src', 'a.ts'), 'export const a = 1;\n');
-      await writeFile(path.join(repositoryPath, '.reg-score', 'policy.json'), JSON.stringify({
+      await writeFile(path.join(repositoryPath, '.r3-doctor', 'policy.json'), JSON.stringify({
         schemaVersion: 1,
         gateEnabled: true,
         requiredCalibrationConditions: ['security-reviewed'],
       }));
-      await writeFile(path.join(repositoryPath, '.reg-score', 'calibration.json'), JSON.stringify({
+      await writeFile(path.join(repositoryPath, '.r3-doctor', 'calibration.json'), JSON.stringify({
         schemaVersion: 1,
         records: [{
           schemaVersion: 1,
@@ -508,7 +508,7 @@ describe('integration: diff report contract', () => {
 
 describe('integration: github outputs', () => {
   it('writes summary and annotations with diagnostic evidence', async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), 'reg-score-gh-'));
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-gh-'));
     const diff = diffReportSchema.parse({
       schemaVersion: 2,
       current: {

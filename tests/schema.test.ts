@@ -185,7 +185,7 @@ describe('schema reference integrity', () => {
     } as DiagnosisReport;
     const entry = {
       schemaVersion: 3,
-      kind: 'reg-score/baseline',
+      kind: 'r3-doctor/baseline',
       inputId: report.metadata.inputId,
       generatedAt: report.metadata.generatedAt,
       assessmentContractVersion: report.metadata.assessmentContractVersion,

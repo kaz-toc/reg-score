@@ -128,7 +128,7 @@ Gitを使うテストはambient checkoutへ依存しない。各テストがtemp
 
 1. 上記回帰テストを修正前に失敗させ、修正後に成功させる。
 2. `npm run validate`がNode 22の通常checkoutとdepth 1 checkoutで成功する。
-3. `reg-score diff`のbaselineなし、一致、不一致、redactionありをCLI smoke testする。
+3. `r3-doctor diff`のbaselineなし、一致、不一致、redactionありをCLI smoke testする。
 4. symlink escape再現で外部fixtureが保持される。
 5. `npm pack --dry-run`と`git diff --check`が成功する。
 6. PRのrequired checksが成功する。

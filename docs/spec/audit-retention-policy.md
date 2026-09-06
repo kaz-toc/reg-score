@@ -4,10 +4,10 @@
 
 | データ | 既定保存先 | 保持期間 |
 |---|---|---|
-| ベースライン | `.reg-score/baselines/` | `policy.retentionDays` |
-| トレンド | `.reg-score/trends/history.jsonl` | `policy.retentionDays` |
-| 校正 | `.reg-score/calibration.json` | リポジトリ寿命 |
-| フィードバック | `.reg-score/feedback/` | チーム判断（秘匿推奨） |
+| ベースライン | `.r3-doctor/baselines/` | `policy.retentionDays` |
+| トレンド | `.r3-doctor/trends/history.jsonl` | `policy.retentionDays` |
+| 校正 | `.r3-doctor/calibration.json` | リポジトリ寿命 |
+| フィードバック | `.r3-doctor/feedback/` | チーム判断（秘匿推奨） |
 
 ## 秘匿化
 
@@ -19,4 +19,4 @@
 
 - CI gate 判断は `policy --evaluate` の `reasons` 配列を PR に記録する。
 - gate は `requireCalibration: true` かつ `calibration.gateEligible` のときのみ失敗可能。
-- 判断根拠は人間が `npm run reg-score -- policy <path> --evaluate` で再現できる。
+- 判断根拠は人間が `npm run r3-doctor -- policy <path> --evaluate` で再現できる。

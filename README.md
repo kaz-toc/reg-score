@@ -1,16 +1,18 @@
-# reg-score
+# r3-doctor
 
-reg-score は、コードベースが将来の変更でデグレを起こしやすい状態かを、決定論的なコード解析と LLM による意味解析で評価する開発者向け診断ツールです。
+**Regression Risk Recovery Doctor** — コードベースのデグレリスクを診断し、回復まで見届ける CLI。
 
-現在の不具合を探すのではなく、次の変更で壊れやすい構造、関係するファイル群、想定原因、優先すべき打ち手を Regression Risk Score と根拠付きのリスクマップとして示すことを目指します。
+Regression Risk Score と根拠付きリスクマップで、次の変更で壊れやすい構造、関係するファイル群、想定原因、優先すべき打ち手を示します。
+
+> 自動修正ツールではありません。診断 → 打ち手 → 再 scan で回復を確認します。
 
 ## 現在の状態
 
-Phase 0–1 MVP（schema、決定論 scan、golden fixtures）と Phase 2–3 の部分実装（intervention、diff/baseline、GitHub advisory）が利用可能です。Phase 4–6 は CLI・スタブ・最小監査にとどまります。`reg-score scan` / `diff` / `baseline` / `trend` / `policy` / `calibration` / `plugins` コマンドは read-only 診断として動作します。
+Phase 0–1 MVP（schema、決定論 scan、golden fixtures）と Phase 2–3 の部分実装（intervention、diff/baseline、GitHub advisory）が利用可能です。Phase 4–6 は CLI・スタブ・最小監査にとどまります。`r3-doctor scan` / `diff` / `baseline` / `trend` / `policy` / `calibration` / `plugins` コマンドは read-only 診断として動作します。
 
 - **TypeScript / JavaScript** — 主要対象言語
 - **Python / Go** — experimental stub（large-file 等の限定シグナルのみ）
-- **LLM semantic 軸** — ACP provider（copilot / cursor / codex / claude）接続済み。CLI 未導入時は `reg-score llm inspect` で確認
+- **LLM semantic 軸** — ACP provider（copilot / cursor / codex / claude）接続済み。CLI 未導入時は `r3-doctor llm inspect` で確認
 
 最初の公開リリース境界（Phase 0 + Phase 1）は満たしています。
 
@@ -19,8 +21,8 @@ Phase 0–1 MVP（schema、決定論 scan、golden fixtures）と Phase 2–3 �
 Node.js 22 以降が必要です。リポジトリ clone なしで CLI を実行できます。
 
 ```bash
-npx reg-score scan . --format json
-npx reg-score@0.1.0 scan . --format markdown
+npx r3-doctor scan . --format json
+npx r3-doctor@0.1.0 scan . --format markdown
 ```
 
 npm パッケージにはコンパイル済み `dist/` のみが含まれます。ソースコードは private GitHub リポジトリで管理しています。
@@ -48,10 +50,10 @@ Node.js 22 以降で動作する TypeScript 製 CLI とし、最初は TypeScrip
 想定する操作例:
 
 ```bash
-reg-score scan . --format markdown
-reg-score diff . --base origin/main --format json
-reg-score llm inspect --provider codex
-reg-score scan . --dry-run-semantic
+r3-doctor scan . --format markdown
+r3-doctor diff . --base origin/main --format json
+r3-doctor llm inspect --provider codex
+r3-doctor scan . --dry-run-semantic
 ```
 
 ## LLM integration smoke test（開発者向け、課金あり）
@@ -61,12 +63,12 @@ codex-acp で `semantic-ambiguity` が evaluated になることを確認しま�
 ```bash
 npm run build
 npm install -g @agentclientprotocol/codex-acp
-REG_SCORE_LLM_INTEGRATION=1 OPENAI_API_KEY=... npm run smoke:llm-integration
+R3_DOCTOR_LLM_INTEGRATION=1 OPENAI_API_KEY=... npm run smoke:llm-integration
 ```
 
-CI では Actions → **LLM integration** を手動実行。repository variable `REG_SCORE_LLM_INTEGRATION=1` と secret `OPENAI_API_KEY` が必要。
+CI では Actions → **LLM integration** を手動実行。repository variable `R3_DOCTOR_LLM_INTEGRATION=1` と secret `OPENAI_API_KEY` が必要。
 
-`reg-score.config.json` で LLM を有効化:
+`r3-doctor.config.json` で LLM を有効化:
 
 ```json
 {
@@ -106,11 +108,11 @@ npm run validate
 | `npm run harness:test` | ガバナンスハーネスのテスト |
 | `npm run harness:validate` | リポジトリポリシーの検証 |
 | `npm run harness:report` | read-only 構造レポート |
-| `npm run smoke:llm-integration` | codex-acp 実 CLI smoke test（`REG_SCORE_LLM_INTEGRATION=1` 必須） |
+| `npm run smoke:llm-integration` | codex-acp 実 CLI smoke test（`R3_DOCTOR_LLM_INTEGRATION=1` 必須） |
 
 ## 配布
 
-- **npm**: `npx reg-score` — public npm にコンパイル済み CLI を公開（ソースは非公開）
-- **GitHub**: [kaz-toc/reg-score](https://github.com/kaz-toc/reg-score) — private ソースリポジトリ
+- **npm**: `npx r3-doctor` — public npm にコンパイル済み CLI を公開（ソースは非公開）
+- **GitHub**: [kaz-toc/r3-doctor](https://github.com/kaz-toc/r3-doctor) — private ソースリポジトリ
 
 初回 publish 後の CI 再公開は Actions → **npm publish**（`NPM_TOKEN` secret 必須）を手動実行します。

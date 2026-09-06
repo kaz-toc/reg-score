@@ -2,7 +2,7 @@ import { lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 
-import { RegScoreError } from './errors.js';
+import { R3DoctorError } from './errors.js';
 
 export type MutationGuard = () => Promise<void>;
 
@@ -32,7 +32,7 @@ export async function atomicAppendLine(targetPath: string, line: string, guard: 
   await guard();
   const targetStat = await lstat(targetPath).catch(() => null);
   if (targetStat?.isSymbolicLink()) {
-    throw new RegScoreError(`refusing to append through symbolic link: ${targetPath}`);
+    throw new R3DoctorError(`refusing to append through symbolic link: ${targetPath}`);
   }
   const existing = await readFile(targetPath, 'utf8').catch(() => '');
   await atomicWriteFile(targetPath, `${existing}${line}\n`, guard);

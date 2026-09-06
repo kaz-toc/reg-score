@@ -10,7 +10,7 @@ import { defaultConfig } from '../src/shared/config.js';
 
 describe('intake contract', () => {
   it('computes input ID from content hash and ignores clone path', async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), 'reg-score-intake-'));
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-intake-'));
     await writeFile(path.join(dir, 'a.ts'), 'export const x = 1;\n');
     const snapshotA = await createRepositorySnapshot(dir);
     const snapshotB = await createRepositorySnapshot(path.resolve(dir));
@@ -30,22 +30,22 @@ describe('intake contract', () => {
   });
 
   it('throws config error for invalid JSON config', async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), 'reg-score-config-'));
-    await writeFile(path.join(dir, 'reg-score.config.json'), '{invalid');
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-config-'));
+    await writeFile(path.join(dir, 'r3-doctor.config.json'), '{invalid');
     await expect(loadConfig(dir)).rejects.toBeInstanceOf(ConfigError);
     await rm(dir, { recursive: true, force: true });
   });
 
   it('uses defaults when config file is missing', async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), 'reg-score-config-'));
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-config-'));
     const config = await loadConfig(dir);
     expect(config).toEqual(defaultConfig);
     await rm(dir, { recursive: true, force: true });
   });
 
   it('rejects unit roots that escape repository', async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), 'reg-score-unit-'));
-    await writeFile(path.join(dir, 'reg-score.config.json'), JSON.stringify({
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-unit-'));
+    await writeFile(path.join(dir, 'r3-doctor.config.json'), JSON.stringify({
       schemaVersion: 1,
       units: [{ id: 'bad', roots: ['../outside'] }],
     }));
@@ -54,7 +54,7 @@ describe('intake contract', () => {
   });
 
   it('does not follow symbolic links', async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), 'reg-score-symlink-'));
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-symlink-'));
     const srcDir = path.join(dir, 'src');
     await mkdir(srcDir, { recursive: true });
     await writeFile(path.join(srcDir, 'real.ts'), 'export const ok = true;\n');
@@ -65,7 +65,7 @@ describe('intake contract', () => {
   });
 
   it('reports unreadable files without failing scan collection', async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), 'reg-score-read-'));
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-read-'));
     const srcDir = path.join(dir, 'src');
     await mkdir(srcDir, { recursive: true });
     await writeFile(path.join(srcDir, 'ok.ts'), 'export const ok = 1;\n');

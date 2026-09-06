@@ -72,7 +72,7 @@ describe('github annotations', () => {
     });
 
     const annotations = formatGitHubAnnotations(diff);
-    expect(annotations).toBe('::error file=src/a.ts,line=1::reg-score: cycle detected (dep-cycle)\n');
+    expect(annotations).toBe('::error file=src/a.ts,line=1::r3-doctor: cycle detected (dep-cycle)\n');
   });
 
   it('emits a notice when comparison is incompatible', () => {
@@ -108,6 +108,6 @@ describe('github annotations', () => {
       },
     });
 
-    expect(formatGitHubAnnotations(diff)).toContain('::notice title=reg-score::assessment contract mismatch');
+    expect(formatGitHubAnnotations(diff)).toContain('::notice title=r3-doctor::assessment contract mismatch');
   });
 });

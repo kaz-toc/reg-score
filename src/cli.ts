@@ -19,7 +19,7 @@ import {
   negotiateCapabilities,
 } from './plugins/analyzer.js';
 import { extractEvidenceWithPlugins, getDefaultPlugins } from './plugins/analyzer.js';
-import { RegScoreError } from './shared/errors.js';
+import { R3DoctorError } from './shared/errors.js';
 import { redactDiffReport, redactReport } from './shared/redaction.js';
 import { writeGitHubAnnotationsFile, writeGitHubSummaryFile } from './reporting/github.js';
 import type { RetentionAudit } from './persistence/retention.js';
@@ -35,11 +35,11 @@ const reporter = new DefaultReporterAdapter();
 
 const program = new Command();
 
-program.name('reg-score').description('Regression risk scoring diagnostic tool').version('0.1.0');
+program.name('r3-doctor').description('Regression Risk Recovery Doctor').version('0.1.0');
 
 function parseFormat(value: string): 'console' | 'markdown' | 'json' {
   if (!VALID_FORMATS.has(value)) {
-    throw new RegScoreError(`invalid format: ${value}`);
+    throw new R3DoctorError(`invalid format: ${value}`);
   }
   return value as 'console' | 'markdown' | 'json';
 }
@@ -59,7 +59,7 @@ program
   .option('--save-baseline', 'save report as baseline', false)
   .option('--record-trend', 'append score to trend history', false)
   .option('--dry-run-semantic', 'print semantic prompt without calling the LLM', false)
-  .option('--unit <id>', 'monorepo unit id from reg-score.config.json')
+  .option('--unit <id>', 'monorepo unit id from r3-doctor.config.json')
   .action(async (
     repoPath: string,
     options: { format: string; saveBaseline: boolean; recordTrend: boolean; dryRunSemantic: boolean; unit?: string },
@@ -274,7 +274,7 @@ llm
     const providerRaw = options.provider ?? 'codex';
     const providerId = normalizeProviderId(providerRaw);
     if (!providerId || providerId === 'none') {
-      throw new RegScoreError(`invalid provider: ${providerRaw}`);
+      throw new R3DoctorError(`invalid provider: ${providerRaw}`);
     }
 
     const definition = getLlmProviderDefinition(providerId);
@@ -305,7 +305,7 @@ llm
 
 program.parseAsync(process.argv).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`reg-score: ${message}\n`);
-  const exitCode = error instanceof RegScoreError ? error.exitCode : 2;
+  process.stderr.write(`r3-doctor: ${message}\n`);
+  const exitCode = error instanceof R3DoctorError ? error.exitCode : 2;
   process.exit(exitCode);
 });

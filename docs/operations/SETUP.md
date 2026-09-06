@@ -1,6 +1,6 @@
 # セットアップ手順
 
-この文書は、reg-score を**新しいプロダクトのリポジトリ**として初期化する手順です。スケルトン名やテンプレート URL がハードコードされている箇所を、コピー先のプロダクト identity に置き換えることが中心になります。
+この文書は、r3-doctor を**新しいプロダクトのリポジトリ**として初期化する手順です。スケルトン名やテンプレート URL がハードコードされている箇所を、コピー先のプロダクト identity に置き換えることが中心になります。
 
 ## 事前に決めること
 
@@ -15,7 +15,7 @@
 ## 1. コピーする
 
 ```bash
-git clone https://github.com/kaz-toc/reg-score.git my-product
+git clone https://github.com/kaz-toc/r3-doctor.git my-product
 cd my-product
 rm -rf .git
 ```
@@ -70,14 +70,14 @@ npm run setup -- --kebab my-product --display "My Product" --github my-org/my-pr
 
 次の文字列が残っていないか確認します。
 
-- `reg-score`（表示名）
-- `reg-score`（kebab-case 識別子）
-- `kaz-toc/reg-score`（テンプレート GitHub URL）
+- `r3-doctor`（表示名）
+- `r3-doctor`（kebab-case 識別子）
+- `kaz-toc/r3-doctor`（テンプレート GitHub URL）
 
 検索例:
 
 ```bash
-rg -n 'reg-score|reg-score|kaz-toc/reg-score' .
+rg -n 'r3-doctor|r3-doctor|kaz-toc/r3-doctor' .
 ```
 
 ### 必ず更新するファイル

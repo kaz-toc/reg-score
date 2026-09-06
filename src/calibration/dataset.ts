@@ -52,7 +52,7 @@ export async function loadCalibration(
   goldenRegressionPassed: boolean,
   requiredConditions: string[],
 ): Promise<CalibrationResult> {
-  const calibrationPath = path.join(repositoryPath, '.reg-score', 'calibration.json');
+  const calibrationPath = path.join(repositoryPath, '.r3-doctor', 'calibration.json');
   try {
     await access(calibrationPath);
   } catch {

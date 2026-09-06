@@ -1,22 +1,22 @@
 {
-  "name": "reg-score",
+  "name": "r3-doctor",
   "version": "0.1.0",
-  "description": "Regression risk scoring diagnostic CLI for codebases",
+  "description": "Regression Risk Recovery Doctor — diagnostic CLI for regression risk",
   "type": "module",
   "license": "MIT",
   "author": "kaz-toc",
   "keywords": [
     "regression",
     "risk",
+    "recovery",
     "diagnostics",
-    "cli",
-    "code-quality"
+    "cli"
   ],
   "engines": {
     "node": ">=22"
   },
   "bin": {
-    "reg-score": "./dist/cli.js"
+    "r3-doctor": "./dist/cli.js"
   },
   "files": [
     "dist",
@@ -33,7 +33,7 @@
     "build": "tsc -p tsconfig.build.json",
     "prepack": "npm run build",
     "dev": "tsx src/cli.ts",
-    "reg-score": "node dist/cli.js",
+    "r3-doctor": "node dist/cli.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "harness:test": "node --test harness/__tests__/*.test.mjs",

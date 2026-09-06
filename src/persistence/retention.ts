@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { baselineEntrySchema, trendEntrySchema } from '../schema/report.v1.js';
 import { atomicWriteFile } from '../shared/atomic-write.js';
-import { ConfigError, RegScoreError } from '../shared/errors.js';
+import { ConfigError, R3DoctorError } from '../shared/errors.js';
 import { assertSafeStorageDir } from './storage-boundary.js';
 import type { SafeStorageDirectory } from './storage-boundary.js';
 
@@ -103,7 +103,7 @@ export async function retainTrendEntries(
       entries.push(trendEntrySchema.parse(JSON.parse(line)));
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      throw new RegScoreError(`trend history parse error at line ${index + 1}: ${reason}`);
+      throw new R3DoctorError(`trend history parse error at line ${index + 1}: ${reason}`);
     }
   }
 

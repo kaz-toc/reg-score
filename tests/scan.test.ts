@@ -65,7 +65,7 @@ describe('scan pipeline', () => {
     const snapshot = await createRepositorySnapshot(path.join(fixturesRoot, 'stable-cart'));
     const report = await runDiagnosis(snapshot);
     const markdown = formatMarkdownReport(report);
-    expect(markdown).toContain('# reg-score Diagnosis Report');
+    expect(markdown).toContain('# r3-doctor Diagnosis Report');
     expect(markdown).toContain('Regression Risk Score');
     expect(markdown).toContain('## Evidence');
     expect(markdown).toContain('## Semantic Findings');

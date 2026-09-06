@@ -1,14 +1,14 @@
-export class RegScoreError extends Error {
+export class R3DoctorError extends Error {
   readonly exitCode: 2 | 1;
 
   constructor(message: string, exitCode: 2 | 1 = 2) {
     super(message);
-    this.name = 'RegScoreError';
+    this.name = 'R3DoctorError';
     this.exitCode = exitCode;
   }
 }
 
-export class ConfigError extends RegScoreError {
+export class ConfigError extends R3DoctorError {
   readonly configPath: string;
 
   constructor(configPath: string, reason: string) {
@@ -18,7 +18,7 @@ export class ConfigError extends RegScoreError {
   }
 }
 
-export class IntakeError extends RegScoreError {
+export class IntakeError extends R3DoctorError {
   constructor(message: string) {
     super(message);
     this.name = 'IntakeError';

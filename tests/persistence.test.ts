@@ -11,7 +11,7 @@ import { resolveSafeStorageDir } from '../src/persistence/storage-boundary.js';
 import { loadTrendHistory } from '../src/persistence/trend-store.js';
 import { runDiagnosis } from '../src/pipeline/diagnose.js';
 import type { DiagnosisReport } from '../src/schema/report.v1.js';
-import { ConfigError, RegScoreError } from '../src/shared/errors.js';
+import { ConfigError, R3DoctorError } from '../src/shared/errors.js';
 import { redactionPolicyFingerprint } from '../src/shared/redaction.js';
 import { createGitRepository } from './helpers/git-repository.js';
 
@@ -41,7 +41,7 @@ function minimalReport(inputId: string, generatedAt: string): DiagnosisReport {
 describe('persistence storage boundary', () => {
   it('rejects the repository root as baseline storage without deleting unrelated JSON', async () => {
     const repo = await createGitRepository({
-      'reg-score.config.json': JSON.stringify({ schemaVersion: 1, baselineDir: '.' }),
+      'r3-doctor.config.json': JSON.stringify({ schemaVersion: 1, baselineDir: '.' }),
       'src/a.ts': 'export const a = 1;\n',
       'victim.json': '{"keep":true}\n',
     });
@@ -68,11 +68,11 @@ describe('persistence storage boundary', () => {
       requiredCalibrationConditions: [],
     });
     const repo = await createGitRepository({
-      '.reg-score/policy.json': policy,
-      'reg-score.config.json': JSON.stringify({ schemaVersion: 1, baselineDir: '.reg-score' }),
+      '.r3-doctor/policy.json': policy,
+      'r3-doctor.config.json': JSON.stringify({ schemaVersion: 1, baselineDir: '.r3-doctor' }),
       'src/a.ts': 'export const a = 1;\n',
     });
-    const policyPath = path.join(repo.path, '.reg-score', 'policy.json');
+    const policyPath = path.join(repo.path, '.r3-doctor', 'policy.json');
 
     try {
       const snapshot = await createRepositorySnapshot(repo.path);
@@ -89,8 +89,8 @@ describe('persistence storage boundary', () => {
 
   it('permits a dedicated top-level baseline storage directory', async () => {
     const repo = await createGitRepository({
-      '.gitignore': '.reg-score/baselines/\n.reg-score/trends/\nbaselines/\n',
-      'reg-score.config.json': JSON.stringify({ schemaVersion: 1, baselineDir: 'baselines' }),
+      '.gitignore': '.r3-doctor/baselines/\n.r3-doctor/trends/\nbaselines/\n',
+      'r3-doctor.config.json': JSON.stringify({ schemaVersion: 1, baselineDir: 'baselines' }),
       'src/a.ts': 'export const a = 1;\n',
     });
 
@@ -113,12 +113,12 @@ describe('persistence storage boundary', () => {
       requiredCalibrationConditions: [],
     });
     const repo = await createGitRepository({
-      'reg-score.config.json': JSON.stringify({ schemaVersion: 1, baselineDir: '.REG-SCORE' }),
-      '.reg-score/policy.json': policy,
+      'r3-doctor.config.json': JSON.stringify({ schemaVersion: 1, baselineDir: '.R3-DOCTOR' }),
+      '.r3-doctor/policy.json': policy,
       'src/a.ts': 'export const a = 1;\n',
     });
-    const canonicalControlPath = await realpath(path.join(repo.path, '.reg-score'));
-    const variantPath = path.join(repo.path, '.REG-SCORE');
+    const canonicalControlPath = await realpath(path.join(repo.path, '.r3-doctor'));
+    const variantPath = path.join(repo.path, '.R3-DOCTOR');
     const variantRealPath = await realpath(variantPath).catch(() => undefined);
 
     try {
@@ -127,7 +127,7 @@ describe('persistence storage boundary', () => {
 
       if (variantRealPath === canonicalControlPath) {
         expect(outcome).toBeInstanceOf(ConfigError);
-        expect(await readFile(path.join(repo.path, '.reg-score/policy.json'), 'utf8')).toBe(policy);
+        expect(await readFile(path.join(repo.path, '.r3-doctor/policy.json'), 'utf8')).toBe(policy);
       } else {
         expect(outcome).not.toBeInstanceOf(Error);
         expect(path.dirname((outcome as Awaited<ReturnType<typeof saveBaseline>>).path)).toBe(await realpath(variantPath));
@@ -138,7 +138,7 @@ describe('persistence storage boundary', () => {
   });
 
   it('rejects an intermediate storage component symlink without touching its target', async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'reg-score-storage-'));
+    const root = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-storage-'));
     const repositoryPath = path.join(root, 'repository');
     const outsideDir = path.join(root, 'outside');
     const outsideBaselineDir = path.join(outsideDir, 'baselines');
@@ -146,10 +146,10 @@ describe('persistence storage boundary', () => {
     await mkdir(repositoryPath, { recursive: true });
     await mkdir(outsideBaselineDir, { recursive: true });
     await writeFile(victimPath, 'keep me');
-    await symlink(outsideDir, path.join(repositoryPath, '.reg-score'));
+    await symlink(outsideDir, path.join(repositoryPath, '.r3-doctor'));
 
     try {
-      await expect(resolveSafeStorageDir(repositoryPath, '.reg-score/baselines', 'baselineDir', false))
+      await expect(resolveSafeStorageDir(repositoryPath, '.r3-doctor/baselines', 'baselineDir', false))
         .rejects.toBeInstanceOf(ConfigError);
       expect(await readFile(victimPath, 'utf8')).toBe('keep me');
     } finally {
@@ -158,17 +158,17 @@ describe('persistence storage boundary', () => {
   });
 
   it('rejects a storage directory symlink without touching its target', async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'reg-score-storage-'));
+    const root = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-storage-'));
     const repositoryPath = path.join(root, 'repository');
     const outsideDir = path.join(root, 'outside');
     const victimPath = path.join(outsideDir, 'victim.txt');
-    await mkdir(path.join(repositoryPath, '.reg-score'), { recursive: true });
+    await mkdir(path.join(repositoryPath, '.r3-doctor'), { recursive: true });
     await mkdir(outsideDir, { recursive: true });
     await writeFile(victimPath, 'keep me');
-    await symlink(outsideDir, path.join(repositoryPath, '.reg-score', 'baselines'));
+    await symlink(outsideDir, path.join(repositoryPath, '.r3-doctor', 'baselines'));
 
     try {
-      await expect(resolveSafeStorageDir(repositoryPath, '.reg-score/baselines', 'baselineDir', false))
+      await expect(resolveSafeStorageDir(repositoryPath, '.r3-doctor/baselines', 'baselineDir', false))
         .rejects.toBeInstanceOf(ConfigError);
       expect(await readFile(victimPath, 'utf8')).toBe('keep me');
     } finally {
@@ -177,7 +177,7 @@ describe('persistence storage boundary', () => {
   });
 
   it('rejects a trend history symlink without reading its target', async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'reg-score-storage-'));
+    const root = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-storage-'));
     const outsideHistoryPath = path.join(root, 'outside-history.jsonl');
     const historyPath = path.join(root, 'history.jsonl');
     const outsideContent = `${JSON.stringify({
@@ -193,7 +193,7 @@ describe('persistence storage boundary', () => {
     await symlink(outsideHistoryPath, historyPath);
 
     try {
-      await expect(loadTrendHistory(historyPath)).rejects.toBeInstanceOf(RegScoreError);
+      await expect(loadTrendHistory(historyPath)).rejects.toBeInstanceOf(R3DoctorError);
       expect(await readFile(outsideHistoryPath, 'utf8')).toBe(outsideContent);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -203,14 +203,14 @@ describe('persistence storage boundary', () => {
 
 describe('persistence retention', () => {
   it('aborts if the validated baseline directory is swapped for a symlink before retention', async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'reg-score-baseline-swap-'));
+    const root = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-baseline-swap-'));
     const repositoryPath = path.join(root, 'repository');
     const outsideDirectory = path.join(root, 'outside');
     await mkdir(repositoryPath, { recursive: true });
     await mkdir(outsideDirectory, { recursive: true });
     const boundary = await resolveSafeStorageDir(
       repositoryPath,
-      '.reg-score/baselines',
+      '.r3-doctor/baselines',
       'baselineDir',
       true,
     );
@@ -220,7 +220,7 @@ describe('persistence retention', () => {
     const victimPath = path.join(outsideDirectory, `baseline-${inputId}-${sourceCommitSha}.json`);
     await writeFile(victimPath, JSON.stringify({
       schemaVersion: 3,
-      kind: 'reg-score/baseline',
+      kind: 'r3-doctor/baseline',
       inputId,
       generatedAt: '2026-01-01T00:00:00.000Z',
       assessmentContractVersion: 2,
@@ -242,10 +242,10 @@ describe('persistence retention', () => {
   });
 
   it('removes only expired validated store-owned baseline entry files', async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'reg-score-baseline-retention-'));
+    const root = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-baseline-retention-'));
     const repositoryPath = path.join(root, 'repository');
     await mkdir(repositoryPath, { recursive: true });
-    const boundary = await resolveSafeStorageDir(repositoryPath, '.reg-score/baselines', 'baselineDir', true);
+    const boundary = await resolveSafeStorageDir(repositoryPath, '.r3-doctor/baselines', 'baselineDir', true);
     const directory = boundary.path;
     const inputId = 'baseline-input';
     const sourceCommitSha = 'a'.repeat(40);
@@ -256,7 +256,7 @@ describe('persistence retention', () => {
     const nestedDirectory = path.join(directory, 'nested.json');
     await writeFile(expiredPath, JSON.stringify({
       schemaVersion: 3,
-      kind: 'reg-score/baseline',
+      kind: 'r3-doctor/baseline',
       inputId,
       generatedAt: '2026-01-01T00:00:00.000Z',
       assessmentContractVersion: 2,
@@ -289,10 +289,10 @@ describe('persistence retention', () => {
   });
 
   it('removes only expired trend entries', async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'reg-score-trend-retention-'));
+    const root = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-trend-retention-'));
     const repositoryPath = path.join(root, 'repository');
     await mkdir(repositoryPath, { recursive: true });
-    const boundary = await resolveSafeStorageDir(repositoryPath, '.reg-score/trends', 'trendDir', true);
+    const boundary = await resolveSafeStorageDir(repositoryPath, '.r3-doctor/trends', 'trendDir', true);
     const directory = boundary.path;
     const historyPath = path.join(directory, 'history.jsonl');
     await writeFile(historyPath, [
@@ -326,10 +326,10 @@ describe('persistence retention', () => {
   });
 
   it('keeps malformed trend history unchanged and reports its line number', async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'reg-score-trend-retention-'));
+    const root = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-trend-retention-'));
     const repositoryPath = path.join(root, 'repository');
     await mkdir(repositoryPath, { recursive: true });
-    const boundary = await resolveSafeStorageDir(repositoryPath, '.reg-score/trends', 'trendDir', true);
+    const boundary = await resolveSafeStorageDir(repositoryPath, '.r3-doctor/trends', 'trendDir', true);
     const directory = boundary.path;
     const historyPath = path.join(directory, 'history.jsonl');
     const content = `${JSON.stringify({
@@ -345,7 +345,7 @@ describe('persistence retention', () => {
 
     try {
       await expect(retainTrendEntries(boundary, new Date('2026-02-01T00:00:00.000Z')))
-        .rejects.toBeInstanceOf(RegScoreError);
+        .rejects.toBeInstanceOf(R3DoctorError);
       await expect(retainTrendEntries(boundary, new Date('2026-02-01T00:00:00.000Z')))
         .rejects.toThrow(/line 2/);
       expect(await readFile(historyPath, 'utf8')).toBe(content);

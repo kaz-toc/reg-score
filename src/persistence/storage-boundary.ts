@@ -15,7 +15,7 @@ export type SafeStorageDirectory = Readonly<{
 const SHARED_OR_CONTROL_DIRECTORIES = new Set([
   '.git',
   '.github',
-  '.reg-score',
+  '.r3-doctor',
   'build',
   'coverage',
   'dist',

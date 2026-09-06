@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { diagnosisReportSchema, diffReportSchema } from '../schema/report.v1.js';
 import type { DiffReport, DiagnosisReport, EvidenceChange, BlastRadiusEntry } from '../schema/report.v1.js';
-import { RegScoreError } from './errors.js';
+import { R3DoctorError } from './errors.js';
 
 const REDACTION_TOKEN_PATTERN = /\[REDACTED(?:-RAW)?:[a-f0-9]{64}\]/g;
 
@@ -17,7 +17,7 @@ export function redactionPolicyFingerprint(redactPaths: string[]): string {
 
 function escapeRawRedactionTokens(value: string): string {
   return value.replace(REDACTION_TOKEN_PATTERN, (token) => {
-    const pseudonym = createHash('sha256').update(`reg-score-redaction-raw-v1\0${token}`).digest('hex');
+    const pseudonym = createHash('sha256').update(`r3-doctor-redaction-raw-v1\0${token}`).digest('hex');
     return `[REDACTED-RAW:${pseudonym}]`;
   });
 }
@@ -28,7 +28,7 @@ function redactString(value: string, redactPaths: string[], preserveTokens = fal
   }
   let result = preserveTokens ? value : escapeRawRedactionTokens(value);
   for (const pattern of redactPaths) {
-    const pseudonym = createHash('sha256').update(`reg-score-redaction-v1\0${pattern}`).digest('hex');
+    const pseudonym = createHash('sha256').update(`r3-doctor-redaction-v1\0${pattern}`).digest('hex');
     const replacement = `[REDACTED:${pseudonym}]`;
     let cursor = 0;
     let protectedResult = '';
@@ -100,7 +100,7 @@ export function redactReport(report: DiagnosisReport, redactPaths: string[]): Di
   const fingerprint = redactionPolicyFingerprint(normalized);
   if (report.metadata.redactionPolicyFingerprint) {
     if (report.metadata.redactionPolicyFingerprint !== fingerprint) {
-      throw new RegScoreError('cannot apply a different redaction policy to an already-redacted report');
+      throw new R3DoctorError('cannot apply a different redaction policy to an already-redacted report');
     }
     return diagnosisReportSchema.parse(report);
   }
@@ -150,7 +150,7 @@ export function redactDiffReport(diff: DiffReport, redactPaths: string[]): DiffR
   const fingerprint = redactionPolicyFingerprint(normalized);
   if (diff.redactionPolicyFingerprint) {
     if (diff.redactionPolicyFingerprint !== fingerprint) {
-      throw new RegScoreError('cannot apply a different redaction policy to an already-redacted diff report');
+      throw new R3DoctorError('cannot apply a different redaction policy to an already-redacted diff report');
     }
     return diffReportSchema.parse(diff);
   }

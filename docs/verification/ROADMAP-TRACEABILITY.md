@@ -7,7 +7,7 @@
 | Phase 0: schema と golden fixtures | 完了 | `tests/schema.test.ts`, `tests/golden.test.ts` |
 | Phase 1: scan と決定論的診断 | 完了 | `tests/scan.test.ts`, `tests/evidence.test.ts`, `tests/intake.test.ts` |
 | Phase 2: intervention と before/after | 部分完了 | `tests/intervention.test.ts` |
-| Phase 3: diff / blast radius / GitHub | 部分完了 | `tests/diff.test.ts`, `tests/github.test.ts`, `.github/workflows/reg-score-advisory.yml` |
+| Phase 3: diff / blast radius / GitHub | 部分完了 | `tests/diff.test.ts`, `tests/github.test.ts`, `.github/workflows/r3-doctor-advisory.yml` |
 | Phase 4: calibration / golden regression | スタブ | `tests/calibration.test.ts`, `tests/redaction.test.ts` |
 | Phase 5: plugin capability negotiation / ACP semantic | 部分完了 | `tests/phases.test.ts`, `tests/operations.test.ts`, `tests/integration.test.ts`, `tests/semantic/acp-client.test.ts` |
 | Phase 6: trend / policy / retention | 部分完了 | `tests/operations.test.ts`, `tests/redaction.test.ts` |
@@ -33,7 +33,7 @@
 | runtime capability | `npm test -- tests/phases.test.ts -t "marks git churn unevaluated when a TypeScript snapshot has no Git history"`; `npm test -- tests/assessment.test.ts -t "does not let unsupported git churn evidence override capability negotiation"`; `npm test -- tests/integration.test.ts -t "marks change volatility unevaluated for a non-Git repository snapshot"` |
 | custom calibration conditions | `npm test -- tests/phases.test.ts -t "requires each policy-defined calibration condition for gate eligibility"`; `npm test -- tests/calibration.test.ts -t "rejects blank or duplicate persisted calibration conditions"` |
 | shallow-checkout independence | `npm test -- tests/review-fixes.test.ts -t "creates two commits without seed files"`; a local `file://` depth-1 clone followed by `npm ci` and `npm run validate` |
-| real codex-acp semantic smoke | `REG_SCORE_LLM_INTEGRATION=1 OPENAI_API_KEY=... npm run smoke:llm-integration`; CI: `.github/workflows/llm-integration.yml` (`workflow_dispatch`, requires repo var `REG_SCORE_LLM_INTEGRATION=1`) |
+| real codex-acp semantic smoke | `R3_DOCTOR_LLM_INTEGRATION=1 OPENAI_API_KEY=... npm run smoke:llm-integration`; CI: `.github/workflows/llm-integration.yml` (`workflow_dispatch`, requires repo var `R3_DOCTOR_LLM_INTEGRATION=1`) |
 
 ## Persistence rollback procedure
 
@@ -41,9 +41,9 @@ Task 6 changes TypeScript module ownership and CLI audit output only. Baseline s
 
 Operational rollback is:
 
-1. Stop concurrent `reg-score` persistence commands.
+1. Stop concurrent `r3-doctor` persistence commands.
 2. Reinstall or rebuild the immediately preceding known-good revision (`ac5308e`).
 3. Re-run the baseline round-trip and trend parsing focused tests before resuming writers.
-4. If expired entries must be recovered, restore `.reg-score/baselines/*.json` and `.reg-score/trends/history.jsonl` from the pre-deployment repository backup. Verify `.reg-score` and its storage directories are not symbolic links before restoring; do not copy through a symlink.
+4. If expired entries must be recovered, restore `.r3-doctor/baselines/*.json` and `.r3-doctor/trends/history.jsonl` from the pre-deployment repository backup. Verify `.r3-doctor` and its storage directories are not symbolic links before restoring; do not copy through a symlink.
 
 Retention intentionally removes expired entries and is not itself reversible. Operational deployment must therefore back up retained persistence files before enabling the new build when expired history may still be needed.

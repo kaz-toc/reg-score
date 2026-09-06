@@ -1,0 +1,44 @@
+name: r3-doctor advisory
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  advisory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: r3-doctor diff advisory
+        run: |
+          npm run r3-doctor -- diff . --base origin/${{ github.base_ref }} --format markdown \
+            --github-summary "$RUNNER_TEMP/r3-doctor-summary.md" \
+            --github-annotations "$RUNNER_TEMP/r3-doctor-annotations.txt"
+
+      - name: policy evaluate (advisory)
+        run: npm run r3-doctor -- policy . --evaluate
+        continue-on-error: true
+
+      - name: Publish job summary
+        if: always() && hashFiles(format('{0}/r3-doctor-summary.md', runner.temp)) != ''
+        run: cat "$RUNNER_TEMP/r3-doctor-summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish PR annotations
+        if: always() && hashFiles(format('{0}/r3-doctor-annotations.txt', runner.temp)) != ''
+        run: cat "$RUNNER_TEMP/r3-doctor-annotations.txt"

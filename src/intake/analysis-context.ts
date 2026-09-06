@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { ASSESSMENT_CONTRACT_VERSION } from '../schema/report.v1.js';
 import type { DiagnosisReport } from '../schema/report.v1.js';
-import type { RegScoreConfig } from '../shared/config.js';
+import type { R3DoctorConfig } from '../shared/config.js';
 
 export type AnalysisContext = {
   version: 1;
@@ -19,7 +19,7 @@ export type AnalysisContext = {
     fanInThreshold: number;
     churnDays: number;
   };
-  llm: RegScoreConfig['llm'];
+  llm: R3DoctorConfig['llm'];
   gitAvailable: boolean;
 };
 
@@ -27,7 +27,7 @@ function normalizedSet(values: string[]): string[] {
   return [...new Set(values.map((value) => value.replace(/\\/g, '/')))].sort();
 }
 
-export function analysisContext(config: RegScoreConfig, unitId: string | undefined, gitAvailable: boolean): AnalysisContext {
+export function analysisContext(config: R3DoctorConfig, unitId: string | undefined, gitAvailable: boolean): AnalysisContext {
   const unit = unitId ? config.units.find((candidate) => candidate.id === unitId) : undefined;
   return {
     version: 1,
@@ -50,7 +50,7 @@ export function analysisContext(config: RegScoreConfig, unitId: string | undefin
 }
 
 export function analysisContextFingerprint(
-  config: RegScoreConfig,
+  config: R3DoctorConfig,
   unitId: string | undefined,
   gitAvailable: boolean,
 ): string {

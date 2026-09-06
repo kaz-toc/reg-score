@@ -17,7 +17,7 @@ const RULES: Array<{
     title: '循環依存を解消する',
     description: '依存方向を一方向に整理し、共有契約を境界モジュールへ移す。',
     expectedEffect: 'structural-fragility と change-blast-radius の低下',
-    verification: 'reg-score scan を再実行し dep-cycle シグナルが消えること',
+    verification: 'r3-doctor scan を再実行し dep-cycle シグナルが消えること',
     cost: 'medium',
     priority: 1,
   },

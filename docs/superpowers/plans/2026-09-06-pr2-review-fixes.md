@@ -79,10 +79,10 @@ async function git(cwd: string, args: string[]): Promise<string> {
 }
 
 export async function createGitRepository(files: Record<string, string> = {}): Promise<TestGitRepository> {
-  const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-git-test-'));
+  const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'r3-doctor-git-test-'));
   await git(repositoryPath, ['init']);
-  await git(repositoryPath, ['config', 'user.email', 'reg-score@example.test']);
-  await git(repositoryPath, ['config', 'user.name', 'reg-score test']);
+  await git(repositoryPath, ['config', 'user.email', 'r3-doctor@example.test']);
+  await git(repositoryPath, ['config', 'user.name', 'r3-doctor test']);
   for (const [relativePath, content] of Object.entries(files)) {
     const absolutePath = path.join(repositoryPath, relativePath);
     await mkdir(path.dirname(absolutePath), { recursive: true });
@@ -143,8 +143,8 @@ git commit -m "test: make diff regressions independent of checkout depth"
 
 ```ts
 it('rejects a storage directory symlink without touching its target', async () => {
-  await symlink(outsideDir, path.join(repositoryPath, '.reg-score', 'baselines'));
-  await expect(resolveSafeStorageDir(repositoryPath, '.reg-score/baselines', 'baselineDir', false))
+  await symlink(outsideDir, path.join(repositoryPath, '.r3-doctor', 'baselines'));
+  await expect(resolveSafeStorageDir(repositoryPath, '.r3-doctor/baselines', 'baselineDir', false))
     .rejects.toBeInstanceOf(ConfigError);
   expect(await readFile(victimPath, 'utf8')).toBe('keep me');
 });
@@ -355,8 +355,8 @@ git commit -m "fix: align semantic and capability availability"
 - Modify: `src/operations/policy.ts`
 - Modify: `src/calibration/dataset.ts`
 - Modify: `src/cli.ts`
-- Modify: `.reg-score/policy.json`
-- Modify: `.reg-score/calibration.json`
+- Modify: `.r3-doctor/policy.json`
+- Modify: `.r3-doctor/calibration.json`
 - Modify: `tests/calibration.test.ts`
 - Modify: `tests/phases.test.ts`
 
@@ -397,7 +397,7 @@ Expected: all selected tests pass, including missing and satisfied custom condit
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/operations/policy.ts src/calibration/dataset.ts src/cli.ts .reg-score/policy.json .reg-score/calibration.json tests/calibration.test.ts tests/phases.test.ts tests/integration.test.ts
+git add src/operations/policy.ts src/calibration/dataset.ts src/cli.ts .r3-doctor/policy.json .r3-doctor/calibration.json tests/calibration.test.ts tests/phases.test.ts tests/integration.test.ts
 git commit -m "feat: enforce policy-defined calibration conditions"
 ```
 
@@ -419,7 +419,7 @@ git commit -m "feat: enforce policy-defined calibration conditions"
 
 ```ts
 const result = await appendTrend(snapshot, report);
-expect(result.path).toBe(path.join(repositoryPath, '.reg-score/trends/history.jsonl'));
+expect(result.path).toBe(path.join(repositoryPath, '.r3-doctor/trends/history.jsonl'));
 expect(result.retention).toEqual(expect.arrayContaining([
   expect.objectContaining({ storage: 'trend', reason: 'expired' }),
 ]));
@@ -443,7 +443,7 @@ Record the exact focused tests for physical storage containment, commit-bound co
 
 ```bash
 npm run validate
-npm pack --dry-run --cache /tmp/reg-score-npm-cache
+npm pack --dry-run --cache /tmp/r3-doctor-npm-cache
 git diff --check main...HEAD
 ```
 
@@ -454,8 +454,8 @@ Expected: exit 0; governance 44/44, all Vitest tests pass, typecheck and build p
 Create a local `file://` shallow clone of the branch into a temporary directory, install using the existing lockfile, and run `npm run validate`. Expected: exit 0 without `HEAD~1` errors.
 
 ```bash
-shallow_dir="$(mktemp -d /tmp/reg-score-shallow.XXXXXX)"
-git clone --depth 1 --branch fix/pr2-review-followups file:///Users/kaz/product/zoe/reg-score "$shallow_dir"
+shallow_dir="$(mktemp -d /tmp/r3-doctor-shallow.XXXXXX)"
+git clone --depth 1 --branch fix/pr2-review-followups file:///Users/kaz/product/zoe/r3-doctor "$shallow_dir"
 cd "$shallow_dir"
 npm ci
 npm run validate
@@ -463,7 +463,7 @@ npm run validate
 
 - [ ] **Step 7: Run CLI smoke cases**
 
-Run baseline-free, matching-baseline, mismatched-commit, and redaction-enabled `reg-score diff` cases in temporary two-commit repositories. Assert exit 0, schema version 2, and absence of contradictory signal changes. Re-run the symlink fixture and assert its outside victim file remains present.
+Run baseline-free, matching-baseline, mismatched-commit, and redaction-enabled `r3-doctor diff` cases in temporary two-commit repositories. Assert exit 0, schema version 2, and absence of contradictory signal changes. Re-run the symlink fixture and assert its outside victim file remains present.
 
 - [ ] **Step 8: Commit**
 

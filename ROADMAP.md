@@ -1,10 +1,10 @@
-# reg-score プロダクトロードマップ
+# r3-doctor プロダクトロードマップ
 
 ## 1. ビジョン
 
 AI コーディングエージェントによる変更を繰り返すうちに、実装者が気付かないままコードベースがデグレしやすい構造へ変化し、修正のたびに別の不具合を生む状態がある。
 
-reg-score は、その状態を不具合の発生前に検出する。コードの構造、依存関係、テスト、変更履歴を決定論的に観測し、LLM で責務や暗黙契約を意味的に分析することで、次を説明可能な診断として提供する。
+r3-doctor は、その状態を不具合の発生前に検出する。コードの構造、依存関係、テスト、変更履歴を決定論的に観測し、LLM で責務や暗黙契約を意味的に分析することで、次を説明可能な診断として提供する。
 
 1. 現在どの程度デグレが発生しやすいか。
 2. どの構造とファイル群が危険か。
@@ -73,8 +73,8 @@ reg-score は、その状態を不具合の発生前に検出する。コード�
 ## 5. 利用体験の到達像
 
 ```bash
-reg-score scan . --format markdown
-reg-score diff . --base origin/main --format json
+r3-doctor scan . --format markdown
+r3-doctor diff . --base origin/main --format json
 ```
 
 利用者は一度の診断で次を得る。
@@ -122,7 +122,7 @@ reg-score diff . --base origin/main --format json
 
 **完了条件:**
 
-- `reg-score scan <path>` が 1 つの TypeScript / JavaScript リポジトリを変更せず診断できる。
+- `r3-doctor scan <path>` が 1 つの TypeScript / JavaScript リポジトリを変更せず診断できる。
 - 上位リスククラスターごとに複数ファイル、原因、トリガー変更、打ち手を示せる。
 - LLM が利用不能でも、決定論的診断と未評価項目を出力できる。
 
@@ -148,7 +148,7 @@ reg-score diff . --base origin/main --format json
 
 **成果物:**
 
-- `reg-score diff --base <ref>`
+- `r3-doctor diff --base <ref>`
 - ベースライン保存と評価契約の互換性検証
 - 変更ファイルからの blast radius とリスク差分
 - GitHub Actions の Job Summary と PR annotation
@@ -219,9 +219,9 @@ reg-score diff . --base origin/main --format json
 | Phase | 状態 | 検証 |
 |---|---|---|
 | 0 | 完了 | `docs/spec/*`, `src/schema/report.v1.ts`, golden fixtures |
-| 1 | 完了 | `reg-score scan`, 決定論診断, golden |
+| 1 | 完了 | `r3-doctor scan`, 決定論診断, golden |
 | 2 | 部分完了 | `fragile-cart-improved` fixture, `tests/intervention.test.ts` |
-| 3 | 部分完了 | `reg-score diff`, blast radius, GitHub advisory workflow |
+| 3 | 部分完了 | `r3-doctor diff`, blast radius, GitHub advisory workflow |
 | 4 | スタブ | 合成 calibration、regression 連携なし |
 | 5 | 部分完了 | Python/Go stub plugin、ACP semantic provider（PR1–3） |
 | 6 | 部分完了 | `trend --analyze`, `priorities`, 最小 retention 監査 |
@@ -234,7 +234,7 @@ reg-score diff . --base origin/main --format json
 - snapshot 診断のみを提供し、PR gate とダッシュボードは含めない。
 - Markdown と JSON の read-only レポートを生成する。
 - 総合スコア、評価軸、上位リスククラスター、根拠、打ち手、確信度を必須出力にする。
-- public npm に `dist/` のみ公開し、`npx reg-score` で CLI を配布する。ソースは private GitHub で管理する。
+- public npm に `dist/` のみ公開し、`npx r3-doctor` で CLI を配布する。ソースは private GitHub で管理する。
 
 ## 8. 主要リスク
 
@@ -255,5 +255,5 @@ reg-score diff . --base origin/main --format json
 - AST / language server / 外部解析器の選択
 - スコア集約式と評価軸ごとの重み
 - 診断キャッシュとベースラインの保存形式
-- npm の最終 package scope と公開ライセンス
+- ~~npm の最終 package scope と公開ライセンス~~ → **決定済み**: package 名 `r3-doctor`、ライセンス MIT
 - リスクスコアを CI gate に利用できる校正条件

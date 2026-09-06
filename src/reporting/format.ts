@@ -268,7 +268,7 @@ export function formatDiffConsoleReport(diff: DiffReport): string {
 export function formatMarkdownReport(report: DiagnosisReport): string {
   const lines: string[] = [];
   const unevaluatedCount = unevaluatedAxisCount(report);
-  lines.push('# reg-score Diagnosis Report');
+  lines.push('# r3-doctor Diagnosis Report');
   lines.push('');
   lines.push(`- Generated: ${report.metadata.generatedAt}`);
   lines.push(`- Input ID: ${report.metadata.inputId}`);
