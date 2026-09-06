@@ -361,7 +361,13 @@ export function assessRisk(input: AssessmentInput): DiagnosisReport {
       unevaluatedAreas: [...new Set(unevaluatedAreas)].sort(),
       semanticProviderStatus,
       semanticProviderReason:
-        input.semanticResolution.status === 'unavailable' ? input.semanticResolution.reason : undefined,
+        input.semanticResolution.status === 'unavailable'
+          ? input.semanticResolution.reason
+          : input.semanticResolution.status === 'available' &&
+              input.snapshot.config.llm.enabled &&
+              input.semanticFindings.length === 0
+            ? 'no findings returned'
+            : undefined,
     },
     repository: {
       regressionRiskScore: repositoryScore,

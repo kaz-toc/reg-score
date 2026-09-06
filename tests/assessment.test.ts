@@ -369,4 +369,23 @@ describe('assessment output labels', () => {
       unevaluated: false,
     });
   });
+
+  it('records no findings reason when semantic provider succeeds with empty output', () => {
+    const report = assessRisk({
+      snapshot: { ...baseSnapshot, config: { ...baseSnapshot.config, llm: { ...baseSnapshot.config.llm, enabled: true, provider: 'codex' } } },
+      evidence: [],
+      semanticFindings: [],
+      capabilities: [],
+      analyzers: [],
+      selectedAnalyzers: 0,
+      successfulAnalyzers: 0,
+      semanticResolution: { status: 'available', provider: { name: 'codex', implementationVersion: '1.0.0', analyze: async () => [] } },
+      llmProvider: 'codex',
+      semanticProviderImplementationVersion: '1.0.0',
+    });
+
+    expect(report.metadata.semanticProviderStatus).toBe('available');
+    expect(report.metadata.semanticProviderReason).toBe('no findings returned');
+    expect(report.axes.find((axis) => axis.axisId === 'semantic-ambiguity')?.unevaluated).toBe(true);
+  });
 });
