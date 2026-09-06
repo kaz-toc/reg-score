@@ -6,7 +6,7 @@ import type { LlmSpawn } from '../acp/process-port.js';
 import type { RepositorySnapshot } from '../../intake/snapshot.js';
 import type { Evidence } from '../../schema/report.v1.js';
 import type { LlmConfig } from '../../shared/config.js';
-import type { SemanticProvider } from '../provider.js';
+import type { SemanticProvider } from '../types.js';
 import { buildContextPacket } from '../context-budget.js';
 import { buildSemanticPrompt } from '../semantic-prompt.js';
 import { parseSemanticResponse } from '../semantic-response.js';

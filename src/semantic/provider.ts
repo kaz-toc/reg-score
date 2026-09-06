@@ -1,27 +1,15 @@
 import { z } from 'zod';
 
-import { llmProviderIdSchema } from './acp/provider-types.js';
-import type { LlmSpawn } from './acp/process-port.js';
-import { AcpSemanticProvider } from './providers/acp-semantic-provider.js';
 import type { SemanticFinding } from '../schema/report.v1.js';
 import { findingIdSchema, riskAxisIdSchema, semanticFindingSchema, evidenceIdSchema } from '../schema/report.v1.js';
 import type { RepositorySnapshot } from '../intake/snapshot.js';
 import type { Evidence } from '../schema/report.v1.js';
-import type { LlmConfig } from '../shared/config.js';
+import { DefaultSemanticProviderFactory } from './provider-factory.js';
+import type { SemanticProvider, SemanticProviderFactory, SemanticProviderResolution } from './types.js';
 
-export type SemanticProvider = {
-  readonly name: string;
-  readonly implementationVersion: string;
-  analyze(snapshot: RepositorySnapshot, evidence: Evidence[]): Promise<unknown>;
-};
-
-export type SemanticProviderResolution =
-  | { status: 'available'; provider: SemanticProvider }
-  | { status: 'unavailable'; reason: string };
-
-export type SemanticProviderFactory = {
-  create(config: LlmConfig): SemanticProviderResolution;
-};
+export type { SemanticProvider, SemanticProviderFactory, SemanticProviderResolution } from './types.js';
+export { DefaultSemanticProviderFactory } from './provider-factory.js';
+export { normalizeProviderId } from './provider-ids.js';
 
 const providerOutputSchema = z.array(
   z
@@ -42,34 +30,6 @@ export class NullSemanticProvider implements SemanticProvider {
 
   async analyze(): Promise<unknown> {
     return [];
-  }
-}
-
-export function normalizeProviderId(
-  provider: string,
-): z.infer<typeof llmProviderIdSchema> | 'none' | null {
-  if (provider === 'none') return 'none';
-  if (provider === 'openai') return 'codex';
-  if (provider === 'anthropic') return 'claude';
-  const parsed = llmProviderIdSchema.safeParse(provider);
-  return parsed.success ? parsed.data : null;
-}
-
-export class DefaultSemanticProviderFactory implements SemanticProviderFactory {
-  constructor(private readonly spawn?: LlmSpawn) {}
-
-  create(config: LlmConfig): SemanticProviderResolution {
-    if (!config.enabled) {
-      return { status: 'unavailable', reason: 'LLM not configured' };
-    }
-    const providerId = normalizeProviderId(config.provider);
-    if (providerId === null || providerId === 'none') {
-      return { status: 'unavailable', reason: 'LLM provider not set' };
-    }
-    return {
-      status: 'available',
-      provider: new AcpSemanticProvider(providerId, config, this.spawn),
-    };
   }
 }
 

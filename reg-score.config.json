@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
-  "exclude": ["node_modules", "dist", "build", "coverage", ".git"],
+  "exclude": ["node_modules", "dist", "build", "coverage", ".git", "tests/fixtures"],
+  "diagnosticSkipRoots": ["harness", "scripts"],
   "maxFiles": 5000,
   "maxFileLines": 800,
   "fanOutThreshold": 8,

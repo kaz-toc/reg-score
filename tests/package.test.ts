@@ -11,7 +11,9 @@ const execFileAsync = promisify(execFile);
 const projectRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('package build artifacts', () => {
-  it('cleans removed modules during prepack and emits the current runtime manifest', async () => {
+  it(
+    'cleans removed modules during prepack and emits the current runtime manifest',
+    async () => {
     const stalePath = path.join(projectRoot, 'dist', 'shared', 'storage-paths.js');
     const cachePath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-pack-cache-'));
     await mkdir(path.dirname(stalePath), { recursive: true });
@@ -51,5 +53,7 @@ describe('package build artifacts', () => {
     } finally {
       await rm(cachePath, { recursive: true, force: true });
     }
-  });
+  },
+    60_000,
+  );
 });

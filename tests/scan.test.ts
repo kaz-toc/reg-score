@@ -40,6 +40,16 @@ describe('scan pipeline', () => {
     expect(first.repository.regressionRiskScore).toBe(second.repository.regressionRiskScore);
   });
 
+  it('does not include fixture dep-cycle when scanning repository root', async () => {
+    const repoRoot = path.join(root, '..');
+    const snapshot = await createRepositorySnapshot(repoRoot);
+    const report = await runDiagnosis(snapshot);
+    expect(report.evidence.some((item) => item.path?.includes('fragile-cart'))).toBe(false);
+    expect(report.evidence.some((item) => item.signalId === 'dep-cycle' && item.path?.startsWith('src/'))).toBe(
+      false,
+    );
+  });
+
   it('links interventions to signals', async () => {
     const snapshot = await createRepositorySnapshot(path.join(fixturesRoot, 'fragile-cart'));
     const evidence = await extractDeterministicEvidence(snapshot);

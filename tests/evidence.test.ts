@@ -7,6 +7,7 @@ import { createRepositorySnapshot } from '../src/intake/snapshot.js';
 import { buildImportGraph, extractDeterministicEvidence, findImportCycles } from '../src/evidence/deterministic.js';
 
 const fixturesRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
+const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('deterministic evidence', () => {
   it('finds simple two-node cycle', () => {
@@ -26,5 +27,21 @@ describe('deterministic evidence', () => {
     expect(cycles.length).toBeGreaterThan(0);
     const evidence = await extractDeterministicEvidence(snapshot);
     expect(evidence.some((item) => item.signalId === 'dep-cycle')).toBe(true);
+  });
+
+  it('does not flag missing-test-pair for src/intake/snapshot.ts in this repository', async () => {
+    const snapshot = await createRepositorySnapshot(repoRoot);
+    const evidence = await extractDeterministicEvidence(snapshot);
+    expect(
+      evidence.some((item) => item.signalId === 'missing-test-pair' && item.path === 'src/intake/snapshot.ts'),
+    ).toBe(false);
+  });
+
+  it('does not emit unresolved-import from test files', async () => {
+    const snapshot = await createRepositorySnapshot(repoRoot);
+    const evidence = await extractDeterministicEvidence(snapshot);
+    expect(
+      evidence.some((item) => item.signalId === 'unresolved-import' && item.path === 'tests/diff.test.ts'),
+    ).toBe(false);
   });
 });

@@ -2,6 +2,7 @@ import path from 'node:path';
 
 import type { Evidence, RiskAxisId, SignalId } from '../schema/report.v1.js';
 import type { RepositorySnapshot, SourceFile } from '../intake/snapshot.js';
+import { isNonProductPath, isTestFile } from './diagnostic-paths.js';
 
 export type ImportEdge = {
   from: string;
@@ -115,6 +116,27 @@ export function findImportCycles(edges: ImportEdge[]): string[][] {
   return uniqueCycles;
 }
 
+export function buildTestCoverageIndex(snapshot: RepositorySnapshot, edges: ImportEdge[]): Set<string> {
+  const filesByPath = new Map(snapshot.files.map((file) => [file.relativePath, file]));
+  const covered = new Set<string>();
+
+  for (const file of snapshot.files) {
+    if (!isTestFile(file.relativePath)) {
+      continue;
+    }
+    for (const edge of edges) {
+      if (edge.from !== file.relativePath || edge.kind !== 'relative') {
+        continue;
+      }
+      if (filesByPath.has(edge.to) && !isTestFile(edge.to)) {
+        covered.add(edge.to);
+      }
+    }
+  }
+
+  return covered;
+}
+
 function expectedTestPath(sourcePath: string): string | null {
   const dir = path.dirname(sourcePath);
   const base = path.basename(sourcePath).replace(/\.(tsx?|jsx?|mjs|cjs)$/, '');
@@ -167,6 +189,8 @@ export async function extractDeterministicEvidence(snapshot: RepositorySnapshot)
   const evidence: Evidence[] = [];
   const edges = buildImportGraph(snapshot);
   const filesByPath = new Map(snapshot.files.map((file) => [file.relativePath, file]));
+  const testCoverage = buildTestCoverageIndex(snapshot, edges);
+  const skipRoots = snapshot.config.diagnosticSkipRoots;
   const fanOut = new Map<string, number>();
   const fanIn = new Map<string, number>();
 
@@ -175,7 +199,7 @@ export async function extractDeterministicEvidence(snapshot: RepositorySnapshot)
       fanOut.set(edge.from, (fanOut.get(edge.from) ?? 0) + 1);
       if (filesByPath.has(edge.to)) {
         fanIn.set(edge.to, (fanIn.get(edge.to) ?? 0) + 1);
-      } else if (edge.to.startsWith('.')) {
+      } else if (edge.to.startsWith('.') && !isTestFile(edge.from) && !isNonProductPath(edge.from, skipRoots)) {
         evidence.push(
           makeEvidence(
             'unresolved-import',
@@ -191,6 +215,9 @@ export async function extractDeterministicEvidence(snapshot: RepositorySnapshot)
   }
 
   for (const [filePath, count] of fanOut.entries()) {
+    if (isNonProductPath(filePath, skipRoots)) {
+      continue;
+    }
     if (count >= snapshot.config.fanOutThreshold) {
       evidence.push(
         makeEvidence(
@@ -206,6 +233,9 @@ export async function extractDeterministicEvidence(snapshot: RepositorySnapshot)
   }
 
   for (const [filePath, count] of fanIn.entries()) {
+    if (isNonProductPath(filePath, skipRoots)) {
+      continue;
+    }
     if (count >= snapshot.config.fanInThreshold) {
       evidence.push(
         makeEvidence(
@@ -222,11 +252,15 @@ export async function extractDeterministicEvidence(snapshot: RepositorySnapshot)
 
   for (const cycle of findImportCycles(edges)) {
     const unique = [...new Set(cycle)].sort();
+    if (!unique.some((filePath) => !isNonProductPath(filePath, skipRoots))) {
+      continue;
+    }
+    const primaryPath = unique.find((filePath) => !isNonProductPath(filePath, skipRoots)) ?? unique[0];
     evidence.push({
       evidenceId: `evidence:dep-cycle:${unique.join('->')}`,
       signalId: 'dep-cycle',
       axisId: 'structural-fragility',
-      path: unique[0],
+      path: primaryPath,
       severity: 'high',
       message: `循環依存: ${unique.join(' -> ')}`,
       metrics: { cycle: unique.join('->') },
@@ -235,6 +269,10 @@ export async function extractDeterministicEvidence(snapshot: RepositorySnapshot)
   }
 
   for (const file of snapshot.files) {
+    if (isNonProductPath(file.relativePath, skipRoots) || isTestFile(file.relativePath)) {
+      continue;
+    }
+
     if (file.nonBlankLines > snapshot.config.maxFileLines) {
       evidence.push(
         makeEvidence(
@@ -275,7 +313,9 @@ export async function extractDeterministicEvidence(snapshot: RepositorySnapshot)
     }
 
     const expectedTest = expectedTestPath(file.relativePath);
-    if (expectedTest && !filesByPath.has(expectedTest)) {
+    const hasColocatedTest = expectedTest ? filesByPath.has(expectedTest) : false;
+    const hasImportCoverage = testCoverage.has(file.relativePath);
+    if (expectedTest && !hasColocatedTest && !hasImportCoverage) {
       evidence.push(
         makeEvidence(
           'missing-test-pair',
@@ -292,6 +332,9 @@ export async function extractDeterministicEvidence(snapshot: RepositorySnapshot)
   if (snapshot.gitAvailable) {
     const churn = await collectGitChurn(snapshot);
     for (const [filePath, count] of churn.entries()) {
+      if (isNonProductPath(filePath, skipRoots)) {
+        continue;
+      }
       if (count >= 5) {
         evidence.push(
           makeEvidence(

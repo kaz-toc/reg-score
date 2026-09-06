@@ -6,7 +6,7 @@ import type { RegScoreConfig } from '../shared/config.js';
 import { configSchema, defaultConfig, normalizeConfig } from '../shared/config.js';
 import { ConfigError, IntakeError } from '../shared/errors.js';
 import { ASSESSMENT_CONTRACT_VERSION } from '../schema/report.v1.js';
-import { getRegisteredExtensions } from '../plugins/analyzer.js';
+import { getRegisteredExtensions } from '../plugins/language-extensions.js';
 import { DefaultGitProvider } from '../adapters/git-provider.js';
 import { analysisContextFingerprint } from './analysis-context.js';
 

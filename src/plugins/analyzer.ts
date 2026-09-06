@@ -2,6 +2,7 @@ import type { CapabilityResult, Evidence, SignalId, SourceLanguage } from '../sc
 import { ALL_SIGNAL_IDS, ASSESSMENT_CONTRACT_VERSION } from '../schema/report.v1.js';
 import type { RepositorySnapshot, SourceFile } from '../intake/snapshot.js';
 import { IntakeError } from '../shared/errors.js';
+import { LANGUAGE_EXTENSIONS } from './language-extensions.js';
 
 export type AnalyzerCapability = {
   readonly language: SourceLanguage;
@@ -16,12 +17,6 @@ export type AnalyzerPlugin = {
   extensions: readonly string[];
   capabilities: readonly AnalyzerCapability[];
   extract(snapshot: RepositorySnapshot): Promise<Evidence[]>;
-};
-
-const LANGUAGE_EXTENSIONS: Record<SourceLanguage, readonly string[]> = {
-  'typescript-javascript': ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'],
-  python: ['.py'],
-  go: ['.go'],
 };
 
 const TS_SIGNALS: SignalId[] = [
@@ -57,10 +52,6 @@ function extractLargeFileEvidence(
       metrics: { lines: file.nonBlankLines },
       source: 'deterministic' as const,
     }));
-}
-
-export function getRegisteredExtensions(): Set<string> {
-  return new Set(Object.values(LANGUAGE_EXTENSIONS).flat());
 }
 
 export function detectLanguages(snapshot: RepositorySnapshot): SourceLanguage[] {

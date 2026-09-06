@@ -1,4 +1,5 @@
 import type { Evidence, Intervention, RiskCluster, SignalId } from '../schema/report.v1.js';
+import { isNonProductPath } from '../evidence/diagnostic-paths.js';
 
 const RULES: Array<{
   signalId: SignalId;
@@ -62,17 +63,24 @@ const RULES: Array<{
   },
 ];
 
-export function buildInterventions(evidence: Evidence[], clusters: RiskCluster[]): Intervention[] {
+export function buildInterventions(
+  evidence: Evidence[],
+  clusters: RiskCluster[],
+  diagnosticSkipRoots: string[] = [],
+): Intervention[] {
   const interventions: Intervention[] = [];
-  let counter = 0;
 
   for (const rule of RULES) {
     const linkedEvidence = evidence.filter((item) => item.signalId === rule.signalId);
     if (linkedEvidence.length === 0) {
       continue;
     }
-    counter += 1;
-    const targetPaths = [...new Set(linkedEvidence.map((item) => item.path).filter(Boolean) as string[])].sort();
+    const targetPaths = [...new Set(linkedEvidence.map((item) => item.path).filter(Boolean) as string[])]
+      .filter((filePath) => !isNonProductPath(filePath, diagnosticSkipRoots))
+      .sort();
+    if (targetPaths.length === 0) {
+      continue;
+    }
     const linkedClusters = clusters
       .filter((cluster) => cluster.evidenceIds.some((id) => linkedEvidence.some((e) => e.evidenceId === id)))
       .map((cluster) => cluster.clusterId);

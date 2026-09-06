@@ -51,6 +51,7 @@ export const configSchema = z
           .strict(),
       )
       .default([]),
+    diagnosticSkipRoots: z.array(z.string()).default([]),
   })
   .strict();
 

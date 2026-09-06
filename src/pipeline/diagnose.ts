@@ -49,6 +49,7 @@ export async function runDiagnosis(
   report.interventions = buildInterventions(
     capabilityApprovedEvidence(report.evidence, report.capabilities),
     report.clusters,
+    snapshot.config.diagnosticSkipRoots,
   );
   return diagnosisReportSchema.parse(report);
 }
