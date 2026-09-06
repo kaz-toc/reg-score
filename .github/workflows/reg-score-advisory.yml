@@ -29,7 +29,7 @@ jobs:
         run: |
           npm run reg-score -- diff . --base origin/${{ github.base_ref }} --format markdown \
             --github-summary "$RUNNER_TEMP/reg-score-summary.md" \
-            --emit-annotations > "$RUNNER_TEMP/reg-score-annotations.txt"
+            --github-annotations "$RUNNER_TEMP/reg-score-annotations.txt"
 
       - name: policy evaluate (advisory)
         run: npm run reg-score -- policy . --evaluate

@@ -56,8 +56,11 @@ describe('phase 5-6 operations', () => {
     const fragile = await runDiagnosis(
       await createRepositorySnapshot(path.join(root, 'fixtures', 'fragile-cart')),
     );
-    const tampered = { ...fragile, repository: { ...fragile.repository, regressionRiskScore: 0 } };
-    expect(tampered.repository.regressionRiskScore).not.toBe(fragile.repository.regressionRiskScore);
-    expect(fragile.repository.regressionRiskScore).toBeGreaterThanOrEqual(25);
+    const stable = await runDiagnosis(
+      await createRepositorySnapshot(path.join(root, 'fixtures', 'stable-cart')),
+    );
+    expect(fragile.repository.regressionRiskScore).toBeGreaterThan(stable.repository.regressionRiskScore);
+    expect(fragile.clusters.length).toBeGreaterThanOrEqual(stable.clusters.length);
+    expect(fragile.evidence.length).toBeGreaterThan(stable.evidence.length);
   });
 });
