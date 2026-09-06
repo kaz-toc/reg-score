@@ -31,13 +31,23 @@ describe('package build artifacts', () => {
       const packedPaths = manifest[0]?.files.map((file) => file.path) ?? [];
       const packageManifest = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8')) as {
         bin?: Record<string, string>;
+        private?: boolean;
+        files?: string[];
       };
 
       await expect(lstat(stalePath)).rejects.toMatchObject({ code: 'ENOENT' });
       expect(packedPaths).toContain('dist/cli.js');
       expect(packedPaths).toContain('dist/intake/analysis-context.js');
       expect(packedPaths).not.toContain('dist/shared/storage-paths.js');
+      expect(packedPaths).toContain('LICENSE');
+      expect(packedPaths).toContain('README.md');
+      expect(packedPaths).not.toContain('src/cli.ts');
+      expect(packedPaths.some((entry) => entry.startsWith('tests/'))).toBe(false);
+      expect(packedPaths.some((entry) => entry.startsWith('harness/'))).toBe(false);
+      expect(packedPaths.some((entry) => entry.startsWith('scripts/'))).toBe(false);
       expect(packageManifest.bin?.['reg-score']).toBe('./dist/cli.js');
+      expect(packageManifest.private).toBeUndefined();
+      expect(packageManifest.files).toEqual(['dist', 'README.md', 'LICENSE']);
     } finally {
       await rm(cachePath, { recursive: true, force: true });
     }

@@ -1,0 +1,41 @@
+name: npm publish
+
+# Manual publish of the compiled CLI to public npm.
+# Requires repository secret NPM_TOKEN with publish access.
+# First publish should be done locally after merge; use this workflow for subsequent releases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version in package.json to publish (must match exactly)'
+        required: true
+        default: '0.1.0'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+      - name: Verify package version
+        run: |
+          expected='${{ inputs.version }}'
+          actual=$(node -p "require('./package.json').version")
+          if [ "$actual" != "$expected" ]; then
+            echo "package.json version ($actual) does not match input ($expected)"
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm run validate
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
