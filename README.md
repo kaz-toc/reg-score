@@ -45,7 +45,7 @@ npm パッケージにはコンパイル済み `dist/` のみが含まれます�
 
 Node.js 22 以降で動作する TypeScript 製 CLI とし、最初は TypeScript / JavaScript リポジトリの read-only snapshot 診断に限定します。言語固有解析と LLM プロバイダーは adapter として分離し、評価契約を保ったまま段階的に対象を拡張します。
 
-想定する将来の操作例:
+想定する操作例:
 
 ```bash
 reg-score scan . --format markdown
@@ -53,6 +53,18 @@ reg-score diff . --base origin/main --format json
 reg-score llm inspect --provider codex
 reg-score scan . --dry-run-semantic
 ```
+
+## LLM integration smoke test（開発者向け、課金あり）
+
+codex-acp で `semantic-ambiguity` が evaluated になることを確認します。
+
+```bash
+npm run build
+npm install -g @agentclientprotocol/codex-acp
+REG_SCORE_LLM_INTEGRATION=1 OPENAI_API_KEY=... npm run smoke:llm-integration
+```
+
+CI では Actions → **LLM integration** を手動実行。repository variable `REG_SCORE_LLM_INTEGRATION=1` と secret `OPENAI_API_KEY` が必要。
 
 `reg-score.config.json` で LLM を有効化:
 
@@ -94,6 +106,7 @@ npm run validate
 | `npm run harness:test` | ガバナンスハーネスのテスト |
 | `npm run harness:validate` | リポジトリポリシーの検証 |
 | `npm run harness:report` | read-only 構造レポート |
+| `npm run smoke:llm-integration` | codex-acp 実 CLI smoke test（`REG_SCORE_LLM_INTEGRATION=1` 必須） |
 
 ## 配布
 

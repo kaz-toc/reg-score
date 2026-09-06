@@ -39,6 +39,7 @@
     "harness:test": "node --test harness/__tests__/*.test.mjs",
     "harness:validate": "node harness/run-checks.mjs validate",
     "harness:report": "node harness/run-checks.mjs report",
+    "smoke:llm-integration": "node scripts/smoke-llm-integration.mjs",
     "validate": "npm run harness:test && npm run harness:validate && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
