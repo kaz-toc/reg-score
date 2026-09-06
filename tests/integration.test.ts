@@ -14,6 +14,9 @@ import { loadBaseline, saveBaseline } from '../src/persistence/baseline-store.js
 import { appendTrend, loadTrendHistory } from '../src/persistence/trend-store.js';
 import { runDiagnosis } from '../src/pipeline/diagnose.js';
 import { runDiffDiagnosis } from '../src/commands/diff.js';
+import { DefaultSemanticProviderFactory } from '../src/semantic/provider.js';
+import { fakeAcpAgent } from './helpers/fake-acp-agent.js';
+import * as acp from '@agentclientprotocol/sdk';
 import {
   formatConsoleReport,
   formatDiffConsoleReport,
@@ -58,7 +61,7 @@ describe('integration: semantic provider injection', () => {
       await writeFile(path.join(repositoryPath, 'src', 'a.ts'), 'export const a = 1;\n');
       await writeFile(path.join(repositoryPath, 'reg-score.config.json'), JSON.stringify({
         schemaVersion: 1,
-        llm: { enabled: true, provider: 'injected', maxFiles: 1, sendScope: 'all' },
+        llm: { enabled: true, provider: 'codex', maxFiles: 1, sendScope: 'all', maxPromptBytes: 80_000 },
       }));
       const snapshot = await createRepositorySnapshot(repositoryPath);
       let analyzed = false;
@@ -89,6 +92,42 @@ describe('integration: semantic provider injection', () => {
       expect(analyzed).toBe(true);
       expect(report.metadata.semanticProviderStatus).toBe('available');
       expect(report.semanticFindings.map((finding) => finding.findingId)).toContain('finding:semantic:injected');
+    } finally {
+      await rm(repositoryPath, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('integration: ACP semantic provider', () => {
+  it('evaluates semantic ambiguity through the default factory with fake ACP spawn', async () => {
+    const repositoryPath = await mkdtemp(path.join(os.tmpdir(), 'reg-score-acp-semantic-'));
+    try {
+      await mkdir(path.join(repositoryPath, 'src'), { recursive: true });
+      await writeFile(path.join(repositoryPath, 'src', 'a.ts'), 'export const ambiguous = 1;\n');
+      await writeFile(path.join(repositoryPath, 'reg-score.config.json'), JSON.stringify({
+        schemaVersion: 1,
+        llm: { enabled: true, provider: 'copilot', maxFiles: 5, sendScope: 'all', maxPromptBytes: 80_000 },
+      }));
+
+      const script = fakeAcpAgent({
+        initialize: {
+          protocolVersion: acp.PROTOCOL_VERSION,
+          agentCapabilities: {},
+          authMethods: [],
+        },
+        promptChunks: [
+          '[{"axisId":"semantic-ambiguity","path":"src/a.ts","summary":"Naming is ambiguous","relatedEvidenceIds":[],"confidence":0.7}]',
+        ],
+      });
+
+      const snapshot = await createRepositorySnapshot(repositoryPath);
+      const report = await runDiagnosis(snapshot, {
+        semanticProviderFactory: new DefaultSemanticProviderFactory(script.spawn),
+      });
+
+      expect(report.metadata.semanticProviderStatus).toBe('available');
+      expect(report.semanticFindings.some((finding) => finding.summary.includes('ambiguous'))).toBe(true);
+      expect(report.axes.find((axis) => axis.axisId === 'semantic-ambiguity')?.unevaluated).toBe(false);
     } finally {
       await rm(repositoryPath, { recursive: true, force: true });
     }

@@ -8,6 +8,7 @@ import {
 } from '../src/schema/report.v1.js';
 import type { DiagnosisReport } from '../src/schema/report.v1.js';
 import { redactionPolicyFingerprint } from '../src/shared/redaction.js';
+import { configSchema } from '../src/shared/config.js';
 import { validateSemanticFindings } from '../src/semantic/provider.js';
 
 function minimalReport(inputId = 'report-id', generatedAt = '2026-01-01T00:00:00.000Z'): DiagnosisReport {
@@ -282,5 +283,38 @@ describe('schema reference integrity', () => {
         [],
       ),
     ).toThrow(/dangling evidence reference/);
+  });
+
+  it('normalizes openai and anthropic provider aliases in config', () => {
+    expect(
+      configSchema.parse({ schemaVersion: 1, llm: { enabled: true, provider: 'openai' } }).llm.provider,
+    ).toBe('codex');
+    expect(
+      configSchema.parse({ schemaVersion: 1, llm: { enabled: true, provider: 'anthropic' } }).llm.provider,
+    ).toBe('claude');
+  });
+
+  it('filters non-semantic-ambiguity findings during validation', () => {
+    const snapshot = {
+      repositoryPath: '/tmp/repo',
+      files: [],
+      inputId: 'x',
+      gitAvailable: false,
+      truncated: false,
+      intakeIssues: [],
+      config: { schemaVersion: 1 },
+    } as never;
+
+    const findings = validateSemanticFindings(
+      [
+        { axisId: 'structural-fragility', summary: 'ignored', relatedEvidenceIds: [], confidence: 0.5, path: 'src/a.ts' },
+        { axisId: 'semantic-ambiguity', summary: 'kept', relatedEvidenceIds: [], confidence: 0.6, path: 'src/a.ts' },
+      ],
+      snapshot,
+      [],
+    );
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.axisId).toBe('semantic-ambiguity');
   });
 });

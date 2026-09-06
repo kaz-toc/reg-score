@@ -18,11 +18,17 @@ import {
   TypeScriptAnalyzerPlugin,
   negotiateCapabilities,
 } from './plugins/analyzer.js';
+import { extractEvidenceWithPlugins, getDefaultPlugins } from './plugins/analyzer.js';
 import { RegScoreError } from './shared/errors.js';
 import { redactDiffReport, redactReport } from './shared/redaction.js';
 import { writeGitHubAnnotationsFile, writeGitHubSummaryFile } from './reporting/github.js';
 import type { RetentionAudit } from './persistence/retention.js';
 import { resolveSafeStorageDir } from './persistence/storage-boundary.js';
+import { createOneShotAcpClient } from './semantic/acp/acp-client.js';
+import { buildLlmLaunchSpec, getLlmProviderDefinition } from './semantic/acp/provider-registry.js';
+import { buildContextPacket } from './semantic/context-budget.js';
+import { normalizeProviderId, selectLlmCandidateFiles } from './semantic/provider.js';
+import { buildSemanticPrompt } from './semantic/semantic-prompt.js';
 
 const VALID_FORMATS = new Set(['console', 'markdown', 'json']);
 const reporter = new DefaultReporterAdapter();
@@ -52,10 +58,30 @@ program
   .option('--format <format>', 'console|markdown|json', 'console')
   .option('--save-baseline', 'save report as baseline', false)
   .option('--record-trend', 'append score to trend history', false)
+  .option('--dry-run-semantic', 'print semantic prompt without calling the LLM', false)
   .option('--unit <id>', 'monorepo unit id from reg-score.config.json')
-  .action(async (repoPath: string, options: { format: string; saveBaseline: boolean; recordTrend: boolean; unit?: string }) => {
-    const format = parseFormat(options.format);
+  .action(async (
+    repoPath: string,
+    options: { format: string; saveBaseline: boolean; recordTrend: boolean; dryRunSemantic: boolean; unit?: string },
+  ) => {
     const snapshot = await createRepositorySnapshot(repoPath, options.unit);
+    if (options.dryRunSemantic) {
+      const plugins = getDefaultPlugins();
+      const { evidence } = await extractEvidenceWithPlugins(snapshot, plugins);
+      const scopedSnapshot = {
+        ...snapshot,
+        files: selectLlmCandidateFiles(snapshot, evidence),
+      };
+      const packet = buildContextPacket(
+        scopedSnapshot,
+        evidence,
+        snapshot.config.llm.maxPromptBytes,
+      );
+      process.stdout.write(`${buildSemanticPrompt(scopedSnapshot, evidence, packet)}\n`);
+      return;
+    }
+
+    const format = parseFormat(options.format);
     const report = await runDiagnosis(snapshot);
     const policy = await loadPolicy(snapshot.repositoryPath, snapshot.config.policyFile);
     const output = reporter.format(redactReport(report, policy.redactPaths), format);
@@ -235,6 +261,46 @@ program
       plugins,
     );
     process.stdout.write(`${JSON.stringify({ plugins: plugins.map((p) => p.id), ...negotiation }, null, 2)}\n`);
+  });
+
+const llm = program.command('llm').description('LLM provider utilities');
+
+llm
+  .command('inspect')
+  .description('inspect configured LLM provider availability')
+  .option('--provider <id>', 'provider id (copilot|cursor|codex|claude|openai|anthropic)')
+  .option('--path <path>', 'repository path used as ACP runtime directory', process.cwd())
+  .action(async (options: { provider?: string; path: string }) => {
+    const providerRaw = options.provider ?? 'codex';
+    const providerId = normalizeProviderId(providerRaw);
+    if (!providerId || providerId === 'none') {
+      throw new RegScoreError(`invalid provider: ${providerRaw}`);
+    }
+
+    const definition = getLlmProviderDefinition(providerId);
+    const repositoryPath = path.resolve(options.path);
+    const spec = buildLlmLaunchSpec(providerId, {
+      executablePath: definition.defaultExecutablePath,
+      modelIdentifier: providerId === 'copilot' ? 'auto' : '',
+      runtimeDirectory: repositoryPath,
+      inheritedEnv: process.env,
+    });
+
+    const client = createOneShotAcpClient();
+    const result = await client.inspect({ spec });
+
+    if (result.ok) {
+      process.stderr.write(`provider=${providerId} status=available\n`);
+      if (result.value.agentInfo) {
+        process.stderr.write(`agent=${result.value.agentInfo.name}${result.value.agentInfo.version ? `@${result.value.agentInfo.version}` : ''}\n`);
+      }
+      process.stderr.write(`authMethods=${result.value.authMethods.map((method) => method.id).join(',') || 'none'}\n`);
+      process.exit(0);
+    }
+
+    process.stderr.write(`provider=${providerId} status=unavailable reason=${result.reason}\n`);
+    process.stderr.write(`installHint=${definition.installHint}\n`);
+    process.exit(result.reason === 'executable_missing' ? 1 : 2);
   });
 
 program.parseAsync(process.argv).catch((error: unknown) => {

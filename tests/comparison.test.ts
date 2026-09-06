@@ -249,6 +249,32 @@ describe('commit-bound baseline comparison', () => {
     }
   });
 
+  it('rejects a same-commit baseline when llm configuration changes', async () => {
+    const configPath = 'reg-score.config.json';
+    const repo = await createGitRepository({
+      [configPath]: JSON.stringify({ schemaVersion: 1, llm: { enabled: false, provider: 'none' } }),
+      'src/a.ts': 'export const a = 1;\n',
+    });
+    try {
+      await checkout(repo.path, repo.baseSha);
+      const baselineSnapshot = await createRepositorySnapshot(repo.path);
+      await saveBaseline(baselineSnapshot, await runDiagnosis(baselineSnapshot));
+      await checkout(repo.path, repo.headSha);
+      await repo.write(
+        configPath,
+        JSON.stringify({ schemaVersion: 1, llm: { enabled: true, provider: 'codex', maxFiles: 20, sendScope: 'all', maxPromptBytes: 80_000 } }),
+      );
+      await repo.commit('enable llm');
+
+      const diff = await runDiffDiagnosis(repo.path, repo.baseSha);
+
+      expect(diff.comparison.compatible).toBe(false);
+      expect(diff.comparison.reason).toContain('analysis context mismatch');
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
   it('refuses to bind a dirty analyzed snapshot to the clean HEAD commit', async () => {
     const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
     try {
@@ -384,7 +410,7 @@ describe('commit-bound baseline comparison', () => {
     const repo = await createGitRepository({
       'reg-score.config.json': JSON.stringify({
         schemaVersion: 1,
-        llm: { enabled: true, provider: 'configured-provider', maxFiles: 1, sendScope: 'all' },
+        llm: { enabled: true, provider: 'codex', maxFiles: 1, sendScope: 'all', maxPromptBytes: 80_000 },
       }),
       'src/a.ts': 'export const a = 1;\n',
     });

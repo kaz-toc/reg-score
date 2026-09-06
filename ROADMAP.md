@@ -223,7 +223,7 @@ reg-score diff . --base origin/main --format json
 | 2 | 部分完了 | `fragile-cart-improved` fixture, `tests/intervention.test.ts` |
 | 3 | 部分完了 | `reg-score diff`, blast radius, GitHub advisory workflow |
 | 4 | スタブ | 合成 calibration、regression 連携なし |
-| 5 | スタブ | Python/Go stub plugin、LLM provider 未接続 |
+| 5 | 部分完了 | Python/Go stub plugin、ACP semantic provider（PR1–3） |
 | 6 | 部分完了 | `trend --analyze`, `priorities`, 最小 retention 監査 |
 
 ## 7. 最初のリリース境界

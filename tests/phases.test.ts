@@ -62,10 +62,32 @@ describe('phase 4-6 capabilities', () => {
     expect(negotiation.capabilities[0]?.unevaluatedSignals).toContain('git-churn');
   });
 
-  it('reports a configured but uninjected semantic provider as unavailable', () => {
-    expect(
-      new DefaultSemanticProviderFactory().create({ enabled: true, provider: 'openai', maxFiles: 1, sendScope: 'all' }),
-    ).toEqual({ status: 'unavailable', reason: 'LLM provider not implemented: openai' });
+  it('returns available for a configured codex provider', () => {
+    const resolution = new DefaultSemanticProviderFactory().create({
+      enabled: true,
+      provider: 'codex',
+      maxFiles: 1,
+      sendScope: 'all',
+      maxPromptBytes: 80_000,
+    });
+    expect(resolution.status).toBe('available');
+    if (resolution.status === 'available') {
+      expect(resolution.provider.name).toBe('codex');
+    }
+  });
+
+  it('normalizes openai alias to codex in the factory', () => {
+    const resolution = new DefaultSemanticProviderFactory().create({
+      enabled: true,
+      provider: 'openai' as never,
+      maxFiles: 1,
+      sendScope: 'all',
+      maxPromptBytes: 80_000,
+    });
+    expect(resolution.status).toBe('available');
+    if (resolution.status === 'available') {
+      expect(resolution.provider.name).toBe('codex');
+    }
   });
 
   it('returns findings from the actual provider supplied by an injected semantic factory', async () => {
