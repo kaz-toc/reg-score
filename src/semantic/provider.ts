@@ -7,7 +7,8 @@ import type { Evidence } from '../schema/report.v1.js';
 import type { LlmConfig } from '../shared/config.js';
 
 export type SemanticProvider = {
-  name: string;
+  readonly name: string;
+  readonly implementationVersion: string;
   analyze(snapshot: RepositorySnapshot, evidence: Evidence[]): Promise<SemanticFinding[]>;
 };
 
@@ -18,12 +19,6 @@ export type SemanticProviderResolution =
 export type SemanticProviderFactory = {
   create(config: LlmConfig): SemanticProviderResolution;
 };
-
-const REGISTERED_PROVIDERS = new Set<string>();
-
-export function registerSemanticProvider(name: string): void {
-  REGISTERED_PROVIDERS.add(name);
-}
 
 const providerOutputSchema = z.array(
   z
@@ -40,6 +35,7 @@ const providerOutputSchema = z.array(
 
 export class NullSemanticProvider implements SemanticProvider {
   readonly name = 'none';
+  readonly implementationVersion = '1.0.0';
 
   async analyze(): Promise<SemanticFinding[]> {
     return [];
@@ -54,18 +50,7 @@ export class DefaultSemanticProviderFactory implements SemanticProviderFactory {
     if (config.provider === 'none') {
       return { status: 'unavailable', reason: 'LLM provider not set' };
     }
-    if (!REGISTERED_PROVIDERS.has(config.provider)) {
-      return { status: 'unavailable', reason: `LLM provider not implemented: ${config.provider}` };
-    }
-    return {
-      status: 'available',
-      provider: {
-        name: config.provider,
-        async analyze(): Promise<SemanticFinding[]> {
-          return [];
-        },
-      },
-    };
+    return { status: 'unavailable', reason: `LLM provider not implemented: ${config.provider}` };
   }
 }
 

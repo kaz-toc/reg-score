@@ -1,17 +1,18 @@
-import type { CapabilityResult, Evidence, RiskAxisId, SignalId, SourceLanguage } from '../schema/report.v1.js';
-import { ALL_SIGNAL_IDS, ASSESSMENT_CONTRACT_VERSION, SIGNAL_AXIS } from '../schema/report.v1.js';
+import type { CapabilityResult, Evidence, SignalId, SourceLanguage } from '../schema/report.v1.js';
+import { ALL_SIGNAL_IDS, ASSESSMENT_CONTRACT_VERSION } from '../schema/report.v1.js';
 import type { RepositorySnapshot, SourceFile } from '../intake/snapshot.js';
 import { IntakeError } from '../shared/errors.js';
 
 export type AnalyzerCapability = {
-  language: SourceLanguage;
-  contractVersion: number;
+  readonly language: SourceLanguage;
+  readonly contractVersion: number;
   signals: readonly SignalId[];
   completeness: 'full' | 'partial';
 };
 
 export type AnalyzerPlugin = {
-  id: string;
+  readonly id: string;
+  readonly implementationVersion: string;
   extensions: readonly string[];
   capabilities: readonly AnalyzerCapability[];
   extract(snapshot: RepositorySnapshot): Promise<Evidence[]>;
@@ -74,7 +75,20 @@ export function detectLanguages(snapshot: RepositorySnapshot): SourceLanguage[] 
 
 export function selectPlugins(snapshot: RepositorySnapshot, plugins: AnalyzerPlugin[]): AnalyzerPlugin[] {
   const languages = new Set(detectLanguages(snapshot));
-  return plugins.filter((plugin) => plugin.capabilities.some((cap) => languages.has(cap.language)));
+  const selected = plugins.filter((plugin) => plugin.capabilities.some((cap) => languages.has(cap.language)));
+  const analyzerIds = selected.map((plugin) => plugin.id);
+  if (new Set(analyzerIds).size !== analyzerIds.length) {
+    throw new IntakeError('selected analyzer IDs must be unique');
+  }
+  for (const plugin of selected) {
+    const capabilityLanguages = plugin.capabilities.map((capability) => capability.language);
+    if (new Set(capabilityLanguages).size !== capabilityLanguages.length) {
+      throw new IntakeError(`analyzer ${plugin.id} has ambiguous capabilities for the same language`);
+    }
+  }
+  return selected.sort((left, right) =>
+    `${left.id}:${left.implementationVersion}`.localeCompare(`${right.id}:${right.implementationVersion}`),
+  );
 }
 
 export function negotiateCapabilities(
@@ -90,32 +104,38 @@ export function negotiateCapabilities(
   const capabilities: CapabilityResult[] = [];
 
   for (const language of languages) {
-    const plugin = selected.find((entry) => entry.capabilities.some((cap) => cap.language === language));
-    if (!plugin) {
+    const contributors = selected.flatMap((plugin) => {
+      const capability = plugin.capabilities.find((entry) => entry.language === language);
+      return capability ? [{ plugin, capability }] : [];
+    });
+    if (contributors.length === 0) {
       capabilities.push({
         language,
+        contractVersion: ASSESSMENT_CONTRACT_VERSION,
         completeness: 'partial',
         supportedSignals: [],
         unevaluatedSignals: [...ALL_SIGNAL_IDS],
         analyzerId: 'none',
+        analyzerImplementationVersion: 'unavailable',
       });
       continue;
     }
 
-    const capability = plugin.capabilities.find((entry) => entry.language === language);
-    if (!capability) {
-      continue;
+    for (const { plugin, capability } of contributors) {
+      const supportedSignals = capability.signals
+        .filter((signal) => snapshot.gitAvailable || signal !== 'git-churn')
+        .sort();
+      const unevaluatedSignals = ALL_SIGNAL_IDS.filter((signal) => !supportedSignals.includes(signal));
+      capabilities.push({
+        language,
+        contractVersion: capability.contractVersion,
+        completeness: capability.completeness,
+        supportedSignals,
+        unevaluatedSignals,
+        analyzerId: plugin.id,
+        analyzerImplementationVersion: plugin.implementationVersion,
+      });
     }
-
-    const supportedSignals = [...capability.signals];
-    const unevaluatedSignals = ALL_SIGNAL_IDS.filter((signal) => !supportedSignals.includes(signal));
-    capabilities.push({
-      language,
-      completeness: capability.completeness,
-      supportedSignals,
-      unevaluatedSignals,
-      analyzerId: plugin.id,
-    });
   }
 
   const supported = [...new Set(capabilities.flatMap((entry) => entry.supportedSignals))].sort();
@@ -125,6 +145,7 @@ export function negotiateCapabilities(
 
 export class TypeScriptAnalyzerPlugin implements AnalyzerPlugin {
   readonly id = 'typescript-javascript-v1';
+  readonly implementationVersion = '1.0.0';
   readonly extensions = LANGUAGE_EXTENSIONS['typescript-javascript'];
   readonly capabilities: AnalyzerCapability[] = [
     {
@@ -146,6 +167,7 @@ export class TypeScriptAnalyzerPlugin implements AnalyzerPlugin {
 
 export class PythonStubAnalyzerPlugin implements AnalyzerPlugin {
   readonly id = 'python-stub-v1';
+  readonly implementationVersion = '1.0.0';
   readonly extensions = LANGUAGE_EXTENSIONS.python;
   readonly capabilities: AnalyzerCapability[] = [
     {
@@ -163,6 +185,7 @@ export class PythonStubAnalyzerPlugin implements AnalyzerPlugin {
 
 export class GoStubAnalyzerPlugin implements AnalyzerPlugin {
   readonly id = 'go-stub-v1';
+  readonly implementationVersion = '1.0.0';
   readonly extensions = LANGUAGE_EXTENSIONS.go;
   readonly capabilities: AnalyzerCapability[] = [
     {
@@ -180,13 +203,6 @@ export class GoStubAnalyzerPlugin implements AnalyzerPlugin {
 
 export function getDefaultPlugins(): AnalyzerPlugin[] {
   return [new TypeScriptAnalyzerPlugin(), new PythonStubAnalyzerPlugin(), new GoStubAnalyzerPlugin()];
-}
-
-export function axisHasSupportedSignals(axisId: RiskAxisId, capabilities: CapabilityResult[]): boolean {
-  const axisSignals = (Object.entries(SIGNAL_AXIS) as Array<[SignalId, typeof axisId]>)
-    .filter(([, mappedAxis]) => mappedAxis === axisId)
-    .map(([signal]) => signal);
-  return capabilities.some((capability) => axisSignals.some((signal) => capability.supportedSignals.includes(signal)));
 }
 
 export async function extractEvidenceWithPlugins(

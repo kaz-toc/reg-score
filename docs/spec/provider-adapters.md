@@ -6,12 +6,15 @@ Phase 5 成果物。評価モデルを変えずに差し替え可能な外部依
 
 ```ts
 type SemanticProvider = {
-  name: string;
+  readonly name: string;
+  readonly implementationVersion: string;
   analyze(snapshot, evidence): Promise<SemanticFinding[]>;
 };
 ```
 
 デフォルト: `NullSemanticProvider`（LLM 無効時）。
+
+`implementationVersion` は同じ provider 名の実装リリースを識別する不変値である。意味所見またはスコアを変え得る実装・モデル契約変更時は必ず更新し、ベースライン互換性 fingerprint に含める。関数ソース文字列からバージョンを推測しない。
 
 ## Git Provider (`src/adapters/git-provider.ts`)
 

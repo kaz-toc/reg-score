@@ -1,27 +1,35 @@
+import { execFile } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 
 import { describe, expect, it } from 'vitest';
 
 import { computeBlastRadius } from '../src/commands/diff.js';
 import { runDiffDiagnosis } from '../src/commands/diff.js';
-import { diffReportSchema } from '../src/schema/report.v1.js';
+import { blastRadiusEntrySchema, diffReportSchema } from '../src/schema/report.v1.js';
 import { createRepositorySnapshot } from '../src/intake/snapshot.js';
-import { saveBaseline, runDiagnosis } from '../src/pipeline/diagnose.js';
+import { saveBaseline } from '../src/persistence/baseline-store.js';
+import { runDiagnosis } from '../src/pipeline/diagnose.js';
 import { IntakeError } from '../src/shared/errors.js';
-import { redactDiffReport } from '../src/shared/redaction.js';
-import { resolveStorageDir } from '../src/shared/storage-paths.js';
+import { redactDiffReport, redactionPolicyFingerprint } from '../src/shared/redaction.js';
 import { ConfigError } from '../src/shared/errors.js';
+import { resolveSafeStorageDir } from '../src/persistence/storage-boundary.js';
 import { analyzeTrend } from '../src/operations/trend.js';
 import type { TrendEntry } from '../src/schema/report.v1.js';
+import { createGitRepository } from './helpers/git-repository.js';
 
-const root = path.dirname(fileURLToPath(import.meta.url));
+const execFileAsync = promisify(execFile);
 
 describe('review fixes', () => {
-  it('rejects storage directories that escape repository root', () => {
-    expect(() => resolveStorageDir('/repo', '..', 'baselineDir')).toThrow(ConfigError);
+  it('rejects storage directories that escape repository root', async () => {
+    const repository = await mkdtemp(path.join(os.tmpdir(), 'reg-score-storage-root-'));
+    try {
+      await expect(resolveSafeStorageDir(repository, '..', 'baselineDir', false)).rejects.toBeInstanceOf(ConfigError);
+    } finally {
+      await rm(repository, { recursive: true, force: true });
+    }
   });
 
   it('computes blast radius paths without import edge kind field', () => {
@@ -30,12 +38,12 @@ describe('review fixes', () => {
       { relativePath: 'src/b.ts' },
     ];
     const radius = computeBlastRadius(['src/a.ts'], '/repo', files);
-    expect(diffReportSchema.shape.comparison.shape.blastRadius.element.safeParse(radius[0]).success).toBe(true);
+    expect(blastRadiusEntrySchema.safeParse(radius[0]).success).toBe(true);
   });
 
   it('redacts diff comparison paths and signal identifiers', async () => {
     const diff = diffReportSchema.parse({
-      schemaVersion: 1,
+      schemaVersion: 2,
       current: {
         metadata: {
           schemaVersion: 1,
@@ -50,7 +58,15 @@ describe('review fixes', () => {
         repository: { regressionRiskScore: 10, confidence: 1, disclaimer: 'd' },
         axes: [],
         clusters: [],
-        evidence: [],
+        evidence: [{
+          evidenceId: 'evidence:dep-cycle:secret-repo/src/a.ts',
+          signalId: 'dep-cycle',
+          axisId: 'structural-fragility',
+          path: 'secret-repo/src/a.ts',
+          severity: 'high',
+          message: 'secret-repo cycle',
+          source: 'deterministic',
+        }],
         semanticFindings: [],
         interventions: [],
         capabilities: [],
@@ -76,6 +92,8 @@ describe('review fixes', () => {
       },
       comparison: {
         compatible: true,
+        riskDelta: 5,
+        baselineId: 'b',
         changedFiles: ['secret-repo/src/a.ts'],
         blastRadius: [{
           changedFile: 'secret-repo/src/a.ts',
@@ -98,7 +116,10 @@ describe('review fixes', () => {
     });
 
     const redacted = redactDiffReport(diff, ['secret-repo']);
+    const redactedAgain = redactDiffReport(redacted, ['secret-repo']);
     expect(JSON.stringify(redacted)).not.toContain('secret-repo');
+    expect(redactedAgain).toEqual(redacted);
+    expect(redacted.redactionPolicyFingerprint).toBe(redactionPolicyFingerprint(['secret-repo']));
   });
 
   it('rejects missing repository roots with intake error', async () => {
@@ -106,23 +127,34 @@ describe('review fixes', () => {
   });
 
   it('suppresses score comparison when no stored baseline exists', async () => {
-    const diff = await runDiffDiagnosis(path.join(root, 'fixtures', 'stable-cart'), 'HEAD~1');
-    expect(diff.comparison.compatible).toBe(false);
-    expect(diff.comparison.reason).toContain('no stored baseline manifest');
-    expect(diff.comparison.riskDelta).toBeUndefined();
+    const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
+    try {
+      const diff = await runDiffDiagnosis(repo.path, repo.baseSha);
+      expect(diff.comparison.compatible).toBe(false);
+      expect(diff.comparison.reason).toContain('no stored baseline manifest');
+      expect(diff.comparison.riskDelta).toBeUndefined();
+    } finally {
+      await repo.cleanup();
+    }
   });
 
   it('compares against stored baseline when manifest exists', async () => {
-    const repoRoot = path.join(root, '..');
-    const snapshot = await createRepositorySnapshot(repoRoot);
-    const report = await runDiagnosis(snapshot);
-    const baselinePath = await saveBaseline(snapshot, report);
+    const repo = await createGitRepository({ 'src/a.ts': 'export const a = 1;\n' });
     try {
-      const diff = await runDiffDiagnosis(repoRoot, 'HEAD~1');
-      expect(diff.comparison.compatible).toBe(true);
-      expect(diff.comparison.baselineId).toBeDefined();
+      await execFileAsync('git', ['checkout', '--detach', repo.baseSha], { cwd: repo.path });
+      const snapshot = await createRepositorySnapshot(repo.path);
+      const report = await runDiagnosis(snapshot);
+      const baseline = await saveBaseline(snapshot, report);
+      try {
+        await execFileAsync('git', ['checkout', '--detach', repo.headSha], { cwd: repo.path });
+        const diff = await runDiffDiagnosis(repo.path, repo.baseSha);
+        expect(diff.comparison.compatible).toBe(true);
+        expect(diff.comparison.baselineId).toBeDefined();
+      } finally {
+        await rm(baseline.path, { force: true });
+      }
     } finally {
-      await rm(baselinePath, { force: true });
+      await repo.cleanup();
     }
   });
 
@@ -135,5 +167,16 @@ describe('review fixes', () => {
       { schemaVersion: 1, generatedAt: '2026-01-05T00:00:00.000Z', inputId: 'e', score: 24, confidence: 1, contractVersion: 2, topClusters: [] },
     ];
     expect(analyzeTrend(entries).degradationStartAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('creates two commits without seed files', async () => {
+    const repo = await createGitRepository();
+    try {
+      const { stdout } = await execFileAsync('git', ['rev-list', '--count', 'HEAD'], { cwd: repo.path });
+      expect(stdout.trim()).toBe('2');
+      expect(repo.baseSha).not.toBe(repo.headSha);
+    } finally {
+      await repo.cleanup();
+    }
   });
 });

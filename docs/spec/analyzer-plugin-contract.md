@@ -4,9 +4,17 @@
 
 ```ts
 type AnalyzerPlugin = {
-  id: string;
+  readonly id: string;
+  readonly implementationVersion: string;
   capabilities: AnalyzerCapability[];
   extract(snapshot: RepositorySnapshot): Promise<Evidence[]>;
+};
+
+type AnalyzerCapability = {
+  readonly language: SourceLanguage;
+  readonly contractVersion: number;
+  signals: SignalId[];
+  completeness: 'full' | 'partial';
 };
 ```
 
@@ -15,7 +23,12 @@ type AnalyzerPlugin = {
 - 未対応シグナルはゼロ点にせず `metadata.unevaluatedAreas` に反映する。
 - 各 Evidence は `source: deterministic` と共通 `signalId` を使用する。
 - 言語固有解析器は `src/plugins/analyzer.ts` に登録する。
+- 同じ言語に複数の解析器が参加する場合、各解析器の ID、実装バージョン、capability contract を個別に report/fingerprint へ記録する。
+- 選択された解析器 ID と、解析器内の言語 capability は一意でなければならない。
 
 ## Versioning
 
-プラグイン contract は `analyzer-contract` バージョンで管理する。破壊的変更時は major を上げ、Assessment Contract と独立に進化できる。
+- `AnalyzerCapability.contractVersion` は Evidence の意味・判定契約を表す。契約変更時は必ず更新する。
+- `AnalyzerPlugin.implementationVersion` は同じ ID の解析実装リリースを識別する不変値であり、解析結果を変え得る実装変更時は必ず更新する。
+- 両方の値はベースライン互換性 fingerprint に含まれる。関数ソース文字列からバージョンを推測しない。
+- プラグイン contract は Assessment Contract と独立に進化できる。

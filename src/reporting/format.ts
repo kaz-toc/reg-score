@@ -18,9 +18,6 @@ export function formatDiffJsonReport(diff: DiffReport): string {
 export function formatConsoleReport(report: DiagnosisReport): string {
   const lines: string[] = [];
   lines.push(`Regression Risk Score: ${report.repository.regressionRiskScore} (confidence ${report.repository.confidence})`);
-  if (report.repository.riskDelta !== undefined) {
-    lines.push(`Risk delta: ${report.repository.riskDelta >= 0 ? '+' : ''}${report.repository.riskDelta}`);
-  }
   lines.push(report.repository.disclaimer);
   lines.push('');
   lines.push('Capabilities:');
@@ -69,6 +66,11 @@ export function formatDiffConsoleReport(diff: DiffReport): string {
   if (diff.comparison.reason) {
     lines.push(`  reason: ${diff.comparison.reason}`);
   }
+  if (diff.comparison.compatible && diff.base) {
+    lines.push(`  baseline: ${diff.comparison.baselineId ?? diff.base.metadata.inputId}`);
+    lines.push(`  Base score: ${diff.base.repository.regressionRiskScore}`);
+    lines.push(`  risk delta: ${diff.comparison.riskDelta ?? 0}`);
+  }
   lines.push(`  changed files: ${diff.comparison.changedFiles.join(', ') || 'none'}`);
   lines.push(`  new signals: ${diff.comparison.newSignals.length}`);
   lines.push(`  worsened signals: ${diff.comparison.worsenedSignals.length}`);
@@ -90,9 +92,6 @@ export function formatMarkdownReport(report: DiagnosisReport): string {
   lines.push(`|---|---|`);
   lines.push(`| Regression Risk Score | ${report.repository.regressionRiskScore} |`);
   lines.push(`| Confidence | ${report.repository.confidence} |`);
-  if (report.repository.riskDelta !== undefined) {
-    lines.push(`| Risk Delta | ${report.repository.riskDelta} |`);
-  }
   lines.push('');
   lines.push(`> ${report.repository.disclaimer}`);
   lines.push('');
@@ -151,6 +150,11 @@ export function formatDiffMarkdownReport(diff: DiffReport): string {
   lines.push(`- Compatible: ${diff.comparison.compatible}`);
   if (diff.comparison.reason) {
     lines.push(`- Reason: ${diff.comparison.reason}`);
+  }
+  if (diff.comparison.compatible && diff.base) {
+    lines.push(`- Baseline: ${diff.comparison.baselineId ?? diff.base.metadata.inputId}`);
+    lines.push(`- Base score: ${diff.base.repository.regressionRiskScore}`);
+    lines.push(`- Risk delta: ${diff.comparison.riskDelta ?? 0}`);
   }
   lines.push(`- Changed files: ${diff.comparison.changedFiles.join(', ') || 'none'}`);
   lines.push('');

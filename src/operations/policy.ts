@@ -5,6 +5,10 @@ import { z } from 'zod';
 
 import { ConfigError } from '../shared/errors.js';
 
+const calibrationConditionsSchema = z
+  .array(z.string().trim().min(1))
+  .refine((values) => new Set(values).size === values.length, 'conditions must be unique');
+
 export const policySchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -14,6 +18,7 @@ export const policySchema = z
     requireCalibration: z.boolean().default(true),
     retentionDays: z.number().int().positive().default(90),
     redactPaths: z.array(z.string()).default([]),
+    requiredCalibrationConditions: calibrationConditionsSchema,
   })
   .strict();
 
@@ -24,7 +29,7 @@ export async function loadPolicy(repositoryPath: string, policyFile: string): Pr
   try {
     await access(policyPath);
   } catch {
-    return policySchema.parse({ schemaVersion: 1 });
+    return policySchema.parse({ schemaVersion: 1, requiredCalibrationConditions: [] });
   }
 
   try {
@@ -40,6 +45,7 @@ export type PolicyEvaluation = {
   advisory: boolean;
   gateWouldFail: boolean;
   gateEligible: boolean;
+  missingCalibrationConditions: string[];
   reasons: string[];
 };
 
@@ -53,7 +59,11 @@ export type GateEligibilityInput = {
   goldenRegressionPassed: boolean;
 };
 
-export function deriveGateEligible(input: GateEligibilityInput): boolean {
+export function deriveGateEligible(
+  input: GateEligibilityInput,
+  requiredConditions: string[],
+  satisfiedConditions: string[],
+): boolean {
   return (
     input.calibrationPresent &&
     input.minSamplesPerBand &&
@@ -61,7 +71,8 @@ export function deriveGateEligible(input: GateEligibilityInput): boolean {
     input.hasMissRate &&
     input.hasRankingQuality &&
     input.hasExplanationUsefulness &&
-    input.goldenRegressionPassed
+    input.goldenRegressionPassed &&
+    requiredConditions.every((condition) => satisfiedConditions.includes(condition))
   );
 }
 
@@ -70,6 +81,7 @@ export function evaluatePolicy(
   confidence: number,
   policy: TeamPolicy,
   gateEligible: boolean,
+  missingCalibrationConditions: string[],
 ): PolicyEvaluation {
   const reasons: string[] = [];
   const advisory = score >= policy.advisoryThreshold;
@@ -89,5 +101,5 @@ export function evaluatePolicy(
     }
   }
 
-  return { advisory, gateWouldFail, gateEligible, reasons };
+  return { advisory, gateWouldFail, gateEligible, missingCalibrationConditions, reasons };
 }

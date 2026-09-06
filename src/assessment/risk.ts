@@ -19,7 +19,7 @@ import {
 } from '../schema/report.v1.js';
 import type { RepositorySnapshot } from '../intake/snapshot.js';
 import type { SemanticProviderResolution } from '../semantic/provider.js';
-import { axisHasSupportedSignals } from '../plugins/analyzer.js';
+import { axisHasSupportedSignals, capabilityApprovedEvidence } from './capability.js';
 
 const AXIS_NAMES: Record<RiskAxisId, string> = {
   'structural-fragility': 'Structural Fragility',
@@ -274,9 +274,7 @@ export type AssessmentInput = {
   successfulAnalyzers: number;
   semanticResolution: SemanticProviderResolution;
   llmProvider?: string;
-  baselineScore?: number;
-  baselineId?: string;
-  contractMismatch?: boolean;
+  semanticProviderImplementationVersion?: string;
 };
 
 export function assessRisk(input: AssessmentInput): DiagnosisReport {
@@ -284,14 +282,15 @@ export function assessRisk(input: AssessmentInput): DiagnosisReport {
   const semanticAxisUnevaluated =
     input.semanticResolution.status !== 'available' ||
     (input.snapshot.config.llm.enabled && input.semanticFindings.length === 0);
+  const evaluatedEvidence = capabilityApprovedEvidence(input.evidence, input.capabilities);
 
   const axes: AxisAssessment[] = axisIds.map((axisId) => {
-    const axisEvidence = input.evidence.filter((item) => item.axisId === axisId);
+    const axisEvidence = evaluatedEvidence.filter((item) => item.axisId === axisId);
     const semantic = input.semanticFindings.filter((item) => item.axisId === axisId);
     const unevaluated =
       axisId === 'semantic-ambiguity'
         ? semanticAxisUnevaluated
-        : !axisHasSupportedSignals(axisId, input.capabilities) && axisEvidence.length === 0;
+        : !axisHasSupportedSignals(axisId, input.capabilities);
     const score = unevaluated ? 0 : axisScoreForEvidence(axisEvidence, semantic);
     const languageCapability = input.capabilities.find((entry) =>
       entry.unevaluatedSignals.some((signal) => SIGNAL_AXIS[signal as Exclude<SignalId, 'semantic-ambiguity'>] === axisId),
@@ -309,7 +308,7 @@ export function assessRisk(input: AssessmentInput): DiagnosisReport {
     };
   });
 
-  const clusters = buildMechanismClusters(input.evidence, input.semanticFindings);
+  const clusters = buildMechanismClusters(evaluatedEvidence, input.semanticFindings);
   const repositoryScore = aggregateRepositoryScore(axes, clusters);
   const totalContribution = axes.filter((a) => !a.unevaluated).reduce((sum, a) => sum + a.score, 0) || 1;
   for (const axis of axes) {
@@ -357,6 +356,7 @@ export function assessRisk(input: AssessmentInput): DiagnosisReport {
       unitId: input.snapshot.unitId,
       analyzers: input.analyzers,
       llmProvider: input.llmProvider,
+      semanticProviderImplementationVersion: input.semanticProviderImplementationVersion,
       truncated: input.snapshot.truncated,
       unevaluatedAreas: [...new Set(unevaluatedAreas)].sort(),
       semanticProviderStatus,
@@ -366,12 +366,6 @@ export function assessRisk(input: AssessmentInput): DiagnosisReport {
     repository: {
       regressionRiskScore: repositoryScore,
       confidence,
-      riskDelta: input.contractMismatch
-        ? undefined
-        : input.baselineScore !== undefined
-          ? repositoryScore - input.baselineScore
-          : undefined,
-      baselineId: input.baselineId,
       disclaimer: SCORE_DISCLAIMER,
     },
     axes,

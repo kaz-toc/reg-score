@@ -29,5 +29,6 @@
     "calibration dataset with >= 30 samples per score band",
     "golden assessment regression tests passing",
     "documented false positive / false negative rates"
-  ]
+  ],
+  "satisfiedConditions": []
 }
