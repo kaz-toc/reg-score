@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +11,10 @@ const cli = path.join(root, 'dist/cli.js');
 function fail(message) {
   console.error(`smoke-llm-integration: ${message}`);
   process.exit(1);
+}
+
+if (!existsSync(cli)) {
+  fail('dist/cli.js not found — run npm run build first');
 }
 
 if (process.env.REG_SCORE_LLM_INTEGRATION !== '1') {

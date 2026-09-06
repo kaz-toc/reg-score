@@ -18,6 +18,7 @@ jobs:
     env:
       REG_SCORE_LLM_INTEGRATION: '1'
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
