@@ -14,6 +14,17 @@ Phase 0–1 MVP（schema、決定論 scan、golden fixtures）と Phase 2–3 �
 
 最初の公開リリース境界（Phase 0 + Phase 1）は満たしています。
 
+## Installation
+
+Node.js 22 以降が必要です。リポジトリ clone なしで CLI を実行できます。
+
+```bash
+npx reg-score scan . --format json
+npx reg-score@0.1.0 scan . --format markdown
+```
+
+npm パッケージにはコンパイル済み `dist/` のみが含まれます。ソースコードは private GitHub リポジトリで管理しています。
+
 ## 目指す診断
 
 - リポジトリ全体と評価軸ごとの Regression Risk Score
@@ -84,8 +95,9 @@ npm run validate
 | `npm run harness:validate` | リポジトリポリシーの検証 |
 | `npm run harness:report` | read-only 構造レポート |
 
-## リポジトリ
+## 配布
 
-GitHub: [kaz-toc/reg-score](https://github.com/kaz-toc/reg-score)
+- **npm**: `npx reg-score` — public npm にコンパイル済み CLI を公開（ソースは非公開）
+- **GitHub**: [kaz-toc/reg-score](https://github.com/kaz-toc/reg-score) — private ソースリポジトリ
 
-npm 公開前は `private: true` を維持し、名称・ライセンス・送信データ方針を確認してください。
+初回 publish 後の CI 再公開は Actions → **npm publish**（`NPM_TOKEN` secret 必須）を手動実行します。

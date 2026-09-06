@@ -234,7 +234,7 @@ reg-score diff . --base origin/main --format json
 - snapshot 診断のみを提供し、PR gate とダッシュボードは含めない。
 - Markdown と JSON の read-only レポートを生成する。
 - 総合スコア、評価軸、上位リスククラスター、根拠、打ち手、確信度を必須出力にする。
-- npm 公開前は `private: true` を維持し、名称・ライセンス・送信データ方針を確認する。
+- public npm に `dist/` のみ公開し、`npx reg-score` で CLI を配布する。ソースは private GitHub で管理する。
 
 ## 8. 主要リスク
 
