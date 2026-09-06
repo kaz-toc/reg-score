@@ -1,0 +1,31 @@
+name: LLM integration
+
+# Optional billable smoke test against real codex-acp.
+# Requires repository secret OPENAI_API_KEY (or CODEX_API_KEY).
+# Enable manually from Actions → LLM integration → Run workflow.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  llm-integration:
+    if: vars.REG_SCORE_LLM_INTEGRATION == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      REG_SCORE_LLM_INTEGRATION: '1'
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci
+      - run: npm run build
+      - name: Install codex-acp CLI
+        run: npm install -g @agentclientprotocol/codex-acp
+      - name: Real CLI semantic smoke test
+        run: npm run smoke:llm-integration

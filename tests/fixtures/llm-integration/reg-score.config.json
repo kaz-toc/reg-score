@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "llm": {
+    "enabled": true,
+    "provider": "codex",
+    "maxFiles": 10,
+    "sendScope": "all",
+    "maxPromptBytes": 80000
+  }
+}

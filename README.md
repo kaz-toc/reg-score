@@ -52,6 +52,16 @@ reg-score scan . --format markdown
 reg-score diff . --base origin/main --format json
 reg-score llm inspect --provider codex
 reg-score scan . --dry-run-semantic
+
+実 CLI smoke test（codex-acp + API key、課金あり）:
+
+```bash
+npm run build
+npm install -g @agentclientprotocol/codex-acp
+REG_SCORE_LLM_INTEGRATION=1 OPENAI_API_KEY=... npm run smoke:llm-integration
+```
+
+CI では Actions → **LLM integration** を手動実行。repository variable `REG_SCORE_LLM_INTEGRATION=1` と secret `OPENAI_API_KEY` が必要。
 ```
 
 `reg-score.config.json` で LLM を有効化:
