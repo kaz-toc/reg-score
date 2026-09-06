@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+import { llmProviderIdSchema } from './acp/provider-types.js';
+import type { LlmSpawn } from './acp/process-port.js';
+import { AcpSemanticProvider } from './providers/acp-semantic-provider.js';
 import type { SemanticFinding } from '../schema/report.v1.js';
 import { findingIdSchema, riskAxisIdSchema, semanticFindingSchema, evidenceIdSchema } from '../schema/report.v1.js';
 import type { RepositorySnapshot } from '../intake/snapshot.js';
@@ -9,7 +12,7 @@ import type { LlmConfig } from '../shared/config.js';
 export type SemanticProvider = {
   readonly name: string;
   readonly implementationVersion: string;
-  analyze(snapshot: RepositorySnapshot, evidence: Evidence[]): Promise<SemanticFinding[]>;
+  analyze(snapshot: RepositorySnapshot, evidence: Evidence[]): Promise<unknown>;
 };
 
 export type SemanticProviderResolution =
@@ -37,20 +40,36 @@ export class NullSemanticProvider implements SemanticProvider {
   readonly name = 'none';
   readonly implementationVersion = '1.0.0';
 
-  async analyze(): Promise<SemanticFinding[]> {
+  async analyze(): Promise<unknown> {
     return [];
   }
 }
 
+export function normalizeProviderId(
+  provider: string,
+): z.infer<typeof llmProviderIdSchema> | 'none' | null {
+  if (provider === 'none') return 'none';
+  if (provider === 'openai') return 'codex';
+  if (provider === 'anthropic') return 'claude';
+  const parsed = llmProviderIdSchema.safeParse(provider);
+  return parsed.success ? parsed.data : null;
+}
+
 export class DefaultSemanticProviderFactory implements SemanticProviderFactory {
+  constructor(private readonly spawn?: LlmSpawn) {}
+
   create(config: LlmConfig): SemanticProviderResolution {
     if (!config.enabled) {
       return { status: 'unavailable', reason: 'LLM not configured' };
     }
-    if (config.provider === 'none') {
+    const providerId = normalizeProviderId(config.provider);
+    if (providerId === null || providerId === 'none') {
       return { status: 'unavailable', reason: 'LLM provider not set' };
     }
-    return { status: 'unavailable', reason: `LLM provider not implemented: ${config.provider}` };
+    return {
+      status: 'available',
+      provider: new AcpSemanticProvider(providerId, config, this.spawn),
+    };
   }
 }
 
@@ -79,7 +98,7 @@ export function validateSemanticFindings(
   snapshot: RepositorySnapshot,
   evidence: Evidence[],
 ): SemanticFinding[] {
-  const parsed = providerOutputSchema.parse(raw);
+  const parsed = providerOutputSchema.parse(raw).filter((item) => item.axisId === 'semantic-ambiguity');
   const evidenceIds = new Set(evidence.map((item) => item.evidenceId));
   const repoPrefix = snapshot.repositoryPath;
 

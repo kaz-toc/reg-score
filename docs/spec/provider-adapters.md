@@ -8,13 +8,43 @@ Phase 5 成果物。評価モデルを変えずに差し替え可能な外部依
 type SemanticProvider = {
   readonly name: string;
   readonly implementationVersion: string;
-  analyze(snapshot, evidence): Promise<SemanticFinding[]>;
+  analyze(snapshot, evidence): Promise<unknown>;
 };
 ```
 
-デフォルト: `NullSemanticProvider`（LLM 無効時）。
+デフォルト: `NullSemanticProvider`（LLM 無効時）。`DefaultSemanticProviderFactory` は ACP 実装 (`AcpSemanticProvider`) を返す。
 
-`implementationVersion` は同じ provider 名の実装リリースを識別する不変値である。意味所見またはスコアを変え得る実装・モデル契約変更時は必ず更新し、ベースライン互換性 fingerprint に含める。関数ソース文字列からバージョンを推測しない。
+### Supported provider IDs
+
+| ID | CLI | Config alias |
+|---|---|---|
+| `copilot` | `copilot --acp --stdio …` | — |
+| `cursor` | `agent acp` | — |
+| `codex` | `codex-acp` | `openai` |
+| `claude` | `claude-agent-acp` | `anthropic` |
+
+`implementationVersion`（現行 `1.0.0`）は同じ provider 名の実装リリースを識別する不変値である。プロンプト契約またはパース契約を変え得る変更時は必ず更新し、ベースライン互換性 fingerprint に含める。
+
+### Config (`reg-score.config.json`)
+
+```json
+{
+  "llm": {
+    "enabled": true,
+    "provider": "codex",
+    "model": "optional-model-id",
+    "executablePath": "optional-override",
+    "maxPromptBytes": 80000,
+    "maxFiles": 20,
+    "sendScope": "cluster-context"
+  }
+}
+```
+
+### CLI utilities
+
+- `reg-score llm inspect [--provider codex]` — spawn + initialize のみ。失敗時は install hint を stderr に出力。
+- `reg-score scan . --dry-run-semantic` — ACP を呼ばずプロンプトを stdout に出力。
 
 ## Git Provider (`src/adapters/git-provider.ts`)
 

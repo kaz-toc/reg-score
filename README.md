@@ -10,7 +10,7 @@ Phase 0–1 MVP（schema、決定論 scan、golden fixtures）と Phase 2–3 �
 
 - **TypeScript / JavaScript** — 主要対象言語
 - **Python / Go** — experimental stub（large-file 等の限定シグナルのみ）
-- **LLM semantic 軸** — provider 未接続のため Semantic Ambiguity は常に unevaluated
+- **LLM semantic 軸** — ACP provider（copilot / cursor / codex / claude）接続済み。CLI 未導入時は `reg-score llm inspect` で確認
 
 最初の公開リリース境界（Phase 0 + Phase 1）は満たしています。
 
@@ -39,7 +39,24 @@ Node.js 22 以降で動作する TypeScript 製 CLI とし、最初は TypeScrip
 ```bash
 reg-score scan . --format markdown
 reg-score diff . --base origin/main --format json
+reg-score llm inspect --provider codex
+reg-score scan . --dry-run-semantic
 ```
+
+`reg-score.config.json` で LLM を有効化:
+
+```json
+{
+  "llm": {
+    "enabled": true,
+    "provider": "codex",
+    "maxFiles": 20,
+    "sendScope": "cluster-context"
+  }
+}
+```
+
+エイリアス: `openai` → `codex`, `anthropic` → `claude`.
 
 ## プロジェクト文書
 

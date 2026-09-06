@@ -341,4 +341,51 @@ describe('assessment output labels', () => {
     expect(markdownOut).toContain('Score: unevaluated (excluded from aggregate)');
     expect(markdownOut).toContain('Score: 0 (no signals detected)');
   });
+
+  it('evaluates semantic ambiguity when validated findings are available', () => {
+    const report = assessRisk({
+      snapshot: baseSnapshot,
+      evidence: [],
+      semanticFindings: [
+        {
+          findingId: 'finding:semantic:1',
+          axisId: 'semantic-ambiguity',
+          path: 'src/a.ts',
+          summary: 'Ambiguous module boundary',
+          relatedEvidenceIds: [],
+          confidence: 0.8,
+        },
+      ],
+      capabilities: [],
+      analyzers: [],
+      selectedAnalyzers: 0,
+      successfulAnalyzers: 0,
+      semanticResolution: { status: 'available', provider: { name: 'codex', implementationVersion: '1.0.0', analyze: async () => [] } },
+      llmProvider: 'codex',
+      semanticProviderImplementationVersion: '1.0.0',
+    });
+
+    expect(report.axes.find((axis) => axis.axisId === 'semantic-ambiguity')).toMatchObject({
+      unevaluated: false,
+    });
+  });
+
+  it('records no findings reason when semantic provider succeeds with empty output', () => {
+    const report = assessRisk({
+      snapshot: { ...baseSnapshot, config: { ...baseSnapshot.config, llm: { ...baseSnapshot.config.llm, enabled: true, provider: 'codex' } } },
+      evidence: [],
+      semanticFindings: [],
+      capabilities: [],
+      analyzers: [],
+      selectedAnalyzers: 0,
+      successfulAnalyzers: 0,
+      semanticResolution: { status: 'available', provider: { name: 'codex', implementationVersion: '1.0.0', analyze: async () => [] } },
+      llmProvider: 'codex',
+      semanticProviderImplementationVersion: '1.0.0',
+    });
+
+    expect(report.metadata.semanticProviderStatus).toBe('available');
+    expect(report.metadata.semanticProviderReason).toBe('no findings returned');
+    expect(report.axes.find((axis) => axis.axisId === 'semantic-ambiguity')?.unevaluated).toBe(true);
+  });
 });
